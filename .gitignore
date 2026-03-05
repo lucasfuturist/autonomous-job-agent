@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# CNS Data
+data/targets.db
+data/*.json
+data/live_logs.txt
+data/output_mds/
+data/input_pdfs/
+data/*.tmp
+
+# System
+.vscode/
+.idea/

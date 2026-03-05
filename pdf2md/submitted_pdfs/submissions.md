@@ -1,0 +1,49 @@
+- **Innovaccer** | AI Engineer | Date: 2026-03-04 10:24 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Abacus.AI** | Software Engineer - Generative AI | Date: 2026-03-04 10:32 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Orbis Group** | Forward Deployed Engineer | Date: 2026-03-04 10:33 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Crossing Hurdles** | AI Systems Engineer | Date: 2026-03-04 10:36 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Synterex** | AI Engineer | Date: 2026-03-04 10:37 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Talently** | AI Solutions Engineer | Date: 2026-03-04 10:39 | Resume: Lucas_Mougeot_AI_Business_Systems_Engineer_C4
+- **Signant Health** | AI Platform Engineer - LLM Agents & RAG | Date: 2026-03-04 10:40 | Resume: Lucas_Mougeot_LLM_Product_Engineer_Zoom
+- **Precision Medicine Group** | AI Engineer | Date: 2026-03-04 10:42 | Resume: Lucas_Mougeot_AI_Engineer_SiPhox
+- **Strive - GTM Talent Partner** | Forward Deployed Engineer | Date: 2026-03-04 10:46 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Areti Group** | AI Solutions Engineer | Date: 2026-03-04 10:47 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Elios Talent** | Forward Deployed Engineer | Date: 2026-03-04 10:48 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **CBTS** | AI Software Engineer | Date: 2026-03-04 10:49 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **INSPYR Solutions** | AI Builder Engineer | Date: 2026-03-04 10:50 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Azumo** | AI Software Engineer - Remote | Date: 2026-03-04 10:50 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Intellect Group** | Artificial Intelligence Engineer | Date: 2026-03-04 10:53 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Metova** | AI Engineer | Date: 2026-03-04 10:54 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Aspire Software** | AI Automation Engineer | Date: 2026-03-04 10:56 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Mainz Brady Group** | Generative AI Engineer | Date: 2026-03-04 11:01 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Patriot Talent Solutions** | Artificial Intelligence Engineer | Date: 2026-03-04 11:02 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Hanalytica GmbH** | Artificial Intelligence Engineer | Date: 2026-03-04 11:03 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Aimhire** | Solutions Engineer | Date: 2026-03-04 11:04 | Resume: Lucas_Mougeot_LLM_Product_Engineer_Zoom
+- **SBS Creatix** | Forward Development Engineer | Date: 2026-03-04 11:05 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **kadence** | AI Infrastructure Engineer | Date: 2026-03-04 11:07 | Resume: Lucas_Mougeot_Platform_Software_Resume_Anduril
+- **Saragossa** | Artificial Intelligence Engineer | Date: 2026-03-04 11:08 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Reveal Technology** | AI/LLM Engineer | Date: 2026-03-04 11:09 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Visionaire Partners** | Senior AI Developer | Date: 2026-03-04 11:10 | Resume: Lucas_Mougeot_AI_Engineer_SiPhox
+- **PointClickCare** | Principal AI Engineer (Autonomous Agent) | Date: 2026-03-04 11:11 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Talentstra** | Forward Deployment Engineer | Date: 2026-03-04 11:14 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **ProEdge Services** | Senior Applied AI / Agentic Systems Engineer | Date: 2026-03-04 11:15 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Improvado** | AI Principal Engineer | Date: 2026-03-04 11:16 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Brooksource** | Senior R&D Data / Full Stack Engineer | Date: 2026-03-04 11:17 | Resume: Lucas_Mougeot_Data_Platform_Singularity
+- **Dynamism** | ML/AI Engineer | Date: 2026-03-04 11:18 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **People In AI** | AI Software Engineer | Date: 2026-03-04 11:19 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Recruits Lab** | Senior AI/ML Engineer | Date: 2026-03-04 11:21 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **SPECTRAFORCE** | Principal GenAI Systems Engineer | Date: 2026-03-04 11:22 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Great Value Hiring** | Machine Learning Engineer | Date: 2026-03-04 11:23 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Insight Global** | Artificial Intelligence Engineer | Date: 2026-03-04 11:27 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Ringside Talent** | Sr. AI Engineer | Date: 2026-03-04 11:29 | Resume: Lucas_Mougeot_AI_Engineer_SiPhox
+- **Orbis Group** | Applied AI Engineer | Date: 2026-03-04 11:30 | Resume: Lucas_Mougeot_CodeMetal_Agentic_AI
+- **Hire With Jarvis** | Backend Python Developer | Date: 2026-03-04 12:28 | Resume: Lucas_Mougeot_Full_Stack_Morse
+- **Valon Tech** | Software Engineer | Date: 2026-03-04 12:36 | Resume: Lucas_Mougeot_Full_Stack_Morse
+- **Aeroflow Health** | Fullstack Software Engineer (Special Projects Team) | Date: 2026-03-04 12:51 | Resume: Lucas_Mougeot_Full_Stack_Robin
+- **Whatnot** | Software Engineer, Seller Growth | Date: 2026-03-04 13:15 | Resume: Lucas_Mougeot_SaaS_Engineer_Resume
+- **Melotech** | Full-Stack Developer, Music & Audio | Date: 2026-03-04 13:18 | Resume: Lucas_Mougeot_Senior_Design_Technologist_Resume
+- **Stable** | Product Engineer | Date: 2026-03-04 13:21 | Resume: Lucas_Mougeot_LLM_Product_Engineer_Zoom
+- **Files.com** | Back End Engineer | Date: 2026-03-04 13:32 | Resume: Lucas_Mougeot_Hunter_Bond_SWE
+- **ilocatum** | Automation (Controls) Engineer | Date: 2026-03-04 13:41 | Resume: Lucas_Mougeot_Electrical_Engineer_Resume
+- **Alexander Technology Group** | Principal Software Engineer - 3D Visualization | Date: 2026-03-04 13:45 | Resume: Lucas_Mougeot_NPI_Engineer_Resume
+---
