@@ -15,7 +15,6 @@ class Memory:
         conn = self._get_conn()
         c = conn.cursor()
         
-        # Core Jobs Table
         c.execute('''CREATE TABLE IF NOT EXISTS jobs
                      (id TEXT PRIMARY KEY, company TEXT, title TEXT, description TEXT, 
                       url TEXT, location TEXT, score INTEGER DEFAULT 0, reason TEXT,
@@ -26,9 +25,8 @@ class Memory:
         try:
             c.execute("ALTER TABLE jobs ADD COLUMN starred INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
-            pass # Column likely exists
+            pass 
 
-        # Missions/Strategy
         c.execute('''CREATE TABLE IF NOT EXISTS missions
                      (term TEXT PRIMARY KEY,
                       last_searched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -36,7 +34,6 @@ class Memory:
                       total_found INTEGER DEFAULT 0,
                       avg_score REAL DEFAULT 0.0)''')
         
-        # Audit Logs
         c.execute('''CREATE TABLE IF NOT EXISTS mission_logs
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       term TEXT,
@@ -44,7 +41,6 @@ class Memory:
                       items_found INTEGER,
                       items_new INTEGER)''')
         
-        # Persistent Agenda
         c.execute('''CREATE TABLE IF NOT EXISTS agenda
                      (term TEXT PRIMARY KEY,
                       added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -132,14 +128,13 @@ class Memory:
 
     def toggle_star(self, job_id, starred_status):
         conn = self._get_conn()
-        # Ensure we write 1 or 0
         val = 1 if starred_status else 0
         conn.execute("UPDATE jobs SET starred = ? WHERE id = ?", (val, job_id))
         conn.commit()
         conn.close()
         self.export_dashboard()
 
-    # --- AGENDA OPERATIONS ---
+    # --- AGENDA OPERATIONS (TRANSACTIONAL) ---
     def add_to_agenda(self, terms, source='SYSTEM'):
         if not terms: return
         if isinstance(terms, str): terms = [terms]
@@ -156,19 +151,46 @@ class Memory:
         if count > 0:
             print(f"[MEMORY] 📅 Added {count} terms to Persistent Agenda.")
 
-    def get_next_agenda_item(self):
+    def recover_agenda(self):
+        """Called on boot: Resets any 'PROCESSING' items (crashes) to 'PENDING' with high priority."""
+        conn = self._get_conn()
+        # Promote crashed items to RECOVERY source so they get priority bypass
+        c = conn.execute("UPDATE agenda SET status='PENDING', source='RECOVERY' WHERE status='PROCESSING'")
+        count = c.rowcount
+        conn.commit()
+        conn.close()
+        if count > 0:
+            print(f"[MEMORY] 🩹 Recovered {count} interrupted missions. Prioritizing execution.")
+
+    def peek_next_agenda_item(self):
+        """Look at the next item without locking it, to determine priority."""
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT term FROM agenda WHERE status='PENDING' ORDER BY added_at ASC LIMIT 1").fetchone()
+        row = conn.execute("SELECT term, source FROM agenda WHERE status='PENDING' ORDER BY added_at ASC LIMIT 1").fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_next_agenda_item(self):
+        """Locks the item by setting status=PROCESSING."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT term, source FROM agenda WHERE status='PENDING' ORDER BY added_at ASC LIMIT 1").fetchone()
         
         term = None
         if row:
             term = row['term']
-            conn.execute("DELETE FROM agenda WHERE term = ?", (term,))
+            conn.execute("UPDATE agenda SET status='PROCESSING' WHERE term = ?", (term,))
             conn.commit()
             
         conn.close()
         return term
+
+    def mark_agenda_complete(self, term):
+        """Removes the item from agenda (it's now in history/missions table)."""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM agenda WHERE term = ?", (term,))
+        conn.commit()
+        conn.close()
 
     def get_agenda_status(self):
         conn = self._get_conn()

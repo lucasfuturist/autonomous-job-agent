@@ -17,11 +17,13 @@ job_queue = queue.Queue()
 def hunter_loop():
     print("[CNS] Booting Hunter (Persistent Mode)...")
     
-    # 1. Boot Check
+    # 1. Crash Recovery
+    mem.recover_agenda()
+
+    # 2. Boot Check
     if mem.get_agenda_status() == 0:
         print("[CNS] 📭 Agenda empty. Generating initial strategy...")
         autonomous_seeds = brain.generate_initial_strategy()
-        # Filter logic is inside loop mostly, but here for safety
         if not autonomous_seeds:
             autonomous_seeds = ["AI Engineer", "Robotics Engineer"]
         mem.add_to_agenda(autonomous_seeds, source='SYSTEM')
@@ -31,9 +33,20 @@ def hunter_loop():
     hunting_active = True
     
     while True:
-        # 2. Backpressure
+        # 3. Check for Priority Bypass
+        next_item = mem.peek_next_agenda_item()
+        
+        # Priority if Manual Injection (USER) or Crash Recovery (RECOVERY)
+        priority_bypass = False
+        if next_item:
+            source = next_item.get('source', 'SYSTEM')
+            if source in ['USER', 'RECOVERY']:
+                priority_bypass = True
+                print(f"[CNS] ⚡ Priority Override: Bypassing queue check for '{next_item['term']}' ({source})")
+
+        # 4. Backpressure (with Bypass)
         current_depth = job_queue.qsize()
-        if current_depth >= MAX_QUEUE_DEPTH:
+        if current_depth >= MAX_QUEUE_DEPTH and not priority_bypass:
             if hunting_active:
                 print(f"[CNS] 🛑 MATCHING MODE ENGAGED. Backlog ({current_depth}) exceeds limit. Hunter sleeping...")
                 hunting_active = False
@@ -44,25 +57,23 @@ def hunter_loop():
                 print(f"[CNS] 🟢 HUNTING MODE ENGAGED. Backlog cleared ({current_depth}). Resuming sweeps...")
                 hunting_active = True
             
-        # 3. Fetch Agenda
+        # 5. Fetch Agenda (Locks item as PROCESSING)
         term = mem.get_next_agenda_item()
         
-        # 4. If Agenda Dry, Replenish (With Cooldowns)
+        # 6. If Agenda Dry, Replenish (With Cooldowns)
         if not term:
-            # Gravity: Only pull high-yield terms not searched in last 24h
             gravity_term = mem.get_gravitational_term(cooldown_hours=24)
             if gravity_term:
                 print(f"[CNS] 🪐 Gravity Pull: Re-queueing high-yield term '{gravity_term}' (Cooldown passed)")
                 term = gravity_term
             else:
-                # Brainstorm: Get new ideas, filtering out anything searched in last 24h
                 print("[CNS] 🧠 Agenda exhausted. Brainstorming new vector...")
                 new_terms = brain.generate_initial_strategy()
                 filtered_terms = mem.filter_cooldown_terms(new_terms, hours=24)
                 
                 if filtered_terms:
                     mem.add_to_agenda(filtered_terms)
-                    time.sleep(2) # Give DB a sec
+                    time.sleep(2) 
                     continue
                 else:
                     print("[CNS] 😴 All viable strategies on cooldown. Sleeping 60s...")
@@ -71,7 +82,7 @@ def hunter_loop():
 
         print(f"[CNS] 🔭 Executing Mission: '{term}'")
         
-        # 5. Execute Sweep
+        # 7. Execute Sweep
         loc = random.choice(LOCATIONS)
         is_remote = (loc == "Remote")
         
@@ -83,7 +94,8 @@ def hunter_loop():
                 job_queue.put(job)
                 new_count += 1
         
-        # Log History (Items Found vs New Unique Items)
+        # 8. Mark Complete (Delete from Agenda, Log to History)
+        mem.mark_agenda_complete(term)
         mem.log_mission_results(term, len(results), new_count, 0)
         
         print(f"[CNS] Hunter found {new_count} new targets (of {len(results)} scraped) for '{term}'")
@@ -110,7 +122,6 @@ def analyst_loop(worker_id):
         resume, ps_script = brain.pick_resume_and_script(job)
         reason = f"{reason}\n\n### DEPLOYMENT SCRIPT:\n{ps_script}"
         
-        # Strategy Evolution
         if score >= 8 and job_queue.qsize() < 10:
             new_terms = brain.strategize(job)
             filtered = mem.filter_cooldown_terms(new_terms, hours=24)
