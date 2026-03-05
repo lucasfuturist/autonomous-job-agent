@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star } from 'lucide-react';
 import JobCard from '../components/JobCard';
 
 export default function Feed() {
@@ -17,6 +17,7 @@ export default function Feed() {
   const [minScore, setMinScore] = useState(parseFloat(localStorage.getItem('cns_score') || 5));
   const [remoteOnly, setRemoteOnly] = useState(localStorage.getItem('cns_remote') === 'true');
   const [stateFilter, setStateFilter] = useState(localStorage.getItem('cns_state') || 'ALL');
+  const [starsOnly, setStarsOnly] = useState(false); // New Filter
 
   useEffect(() => { localStorage.setItem('cns_score', minScore) }, [minScore]);
   useEffect(() => { localStorage.setItem('cns_remote', remoteOnly) }, [remoteOnly]);
@@ -25,7 +26,7 @@ export default function Feed() {
   // Reset display limit when a user actively filters
   useEffect(() => {
     setDisplayLimit(100);
-  }, [search, minScore, remoteOnly, stateFilter]);
+  }, [search, minScore, remoteOnly, stateFilter, starsOnly]);
 
   const fetchData = async () => {
     try {
@@ -63,6 +64,14 @@ export default function Feed() {
     });
   };
 
+  const handleToggleStar = async (id, starred) => {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, starred: starred } : j));
+    await fetch('/api/star', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, starred })
+    });
+  };
+
   const handleSaveRules = async () => {
     await fetch('/api/rules', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -93,7 +102,14 @@ export default function Feed() {
 
   const filteredJobs = jobs.filter(j => {
     if (j.status !== 'TARGET') return false; 
-    if (parseFloat(j.score) < minScore) return false;
+    
+    // Star filter override or Score check
+    if (starsOnly) {
+        if (!j.starred) return false;
+    } else {
+        if (parseFloat(j.score) < minScore) return false;
+    }
+
     if (remoteOnly) {
       if (!((j.location+j.title).toLowerCase().includes('remote'))) return false;
     }
@@ -177,7 +193,11 @@ export default function Feed() {
         </div>
 
         <button onClick={() => setRemoteOnly(!remoteOnly)} style={{ background: remoteOnly ? 'rgba(0,255,157,0.1)' : '#000', border: `1px solid ${remoteOnly ? 'var(--accent)' : '#444'}`, color: remoteOnly ? 'var(--accent)' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-          <Wifi size={14} /> REMOTE ONLY
+          <Wifi size={14} /> REMOTE
+        </button>
+
+        <button onClick={() => setStarsOnly(!starsOnly)} style={{ background: starsOnly ? 'rgba(255,215,0,0.1)' : '#000', border: `1px solid ${starsOnly ? 'gold' : '#444'}`, color: starsOnly ? 'gold' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+          <Star size={14} fill={starsOnly ? "gold" : "none"} /> STARRED
         </button>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderLeft: '1px solid #333', paddingLeft: '15px' }}>
@@ -194,7 +214,7 @@ export default function Feed() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))', gap: '15px' }}>
         {filteredJobs.length === 0 && <div style={{ color: '#666', padding: '20px' }}>No targets found. Try lowering score or widening search.</div>}
         {visibleJobs.map(job => (
-          <JobCard key={job.id} job={job} onUpdateStatus={handleUpdateStatus} />
+          <JobCard key={job.id} job={job} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} />
         ))}
       </div>
 

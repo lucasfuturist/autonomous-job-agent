@@ -14,13 +14,21 @@ class Memory:
     def _init_db(self):
         conn = self._get_conn()
         c = conn.cursor()
+        
+        # Core Jobs Table
         c.execute('''CREATE TABLE IF NOT EXISTS jobs
                      (id TEXT PRIMARY KEY, company TEXT, title TEXT, description TEXT, 
                       url TEXT, location TEXT, score INTEGER DEFAULT 0, reason TEXT,
                       selected_resume TEXT, status TEXT DEFAULT 'PENDING',
                       found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
-        # Aggregate Stats (Strategy Profile)
+        # MIGRATION: Add 'starred' column if missing
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN starred INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass # Column likely exists
+
+        # Missions/Strategy
         c.execute('''CREATE TABLE IF NOT EXISTS missions
                      (term TEXT PRIMARY KEY,
                       last_searched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -28,7 +36,7 @@ class Memory:
                       total_found INTEGER DEFAULT 0,
                       avg_score REAL DEFAULT 0.0)''')
         
-        # NEW: Granular Audit Log (History)
+        # Audit Logs
         c.execute('''CREATE TABLE IF NOT EXISTS mission_logs
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       term TEXT,
@@ -36,6 +44,7 @@ class Memory:
                       items_found INTEGER,
                       items_new INTEGER)''')
         
+        # Persistent Agenda
         c.execute('''CREATE TABLE IF NOT EXISTS agenda
                      (term TEXT PRIMARY KEY,
                       added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -44,7 +53,7 @@ class Memory:
         conn.commit()
         conn.close()
 
-    # --- READ OPERATIONS (API) ---
+    # --- READ OPERATIONS ---
     def get_jobs(self, status=None):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
@@ -121,6 +130,15 @@ class Memory:
         conn.close()
         self.export_dashboard() 
 
+    def toggle_star(self, job_id, starred_status):
+        conn = self._get_conn()
+        # Ensure we write 1 or 0
+        val = 1 if starred_status else 0
+        conn.execute("UPDATE jobs SET starred = ? WHERE id = ?", (val, job_id))
+        conn.commit()
+        conn.close()
+        self.export_dashboard()
+
     # --- AGENDA OPERATIONS ---
     def add_to_agenda(self, terms, source='SYSTEM'):
         if not terms: return
@@ -161,7 +179,6 @@ class Memory:
     # --- HISTORY & STRATEGY ---
     def get_gravitational_term(self, cooldown_hours=24):
         conn = self._get_conn()
-        # Select high-performing terms that haven't been searched in the last X hours
         query = f'''SELECT term FROM missions 
                     WHERE avg_score >= 5 
                     AND total_found > 0
@@ -176,7 +193,6 @@ class Memory:
     def filter_cooldown_terms(self, terms, hours=24):
         if not terms: return []
         conn = self._get_conn()
-        # Get terms searched recently
         placeholders = ','.join('?' for _ in terms)
         query = f'''SELECT term FROM missions 
                     WHERE term IN ({placeholders}) 
@@ -197,7 +213,6 @@ class Memory:
     def log_mission_results(self, term, found_count, new_count, avg_score=0):
         conn = self._get_conn()
         
-        # 1. Update Aggregate Stats (Upsert)
         conn.execute('''INSERT INTO missions (term, times_searched, total_found, avg_score) 
                         VALUES (?, 1, ?, ?)
                         ON CONFLICT(term) DO UPDATE SET 
@@ -206,7 +221,6 @@ class Memory:
                         total_found=total_found + ?''',
                      (term, found_count, avg_score, found_count))
         
-        # 2. Log History Event
         conn.execute("INSERT INTO mission_logs (term, items_found, items_new) VALUES (?, ?, ?)", 
                      (term, found_count, new_count))
         

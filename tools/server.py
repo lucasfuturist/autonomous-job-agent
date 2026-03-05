@@ -102,6 +102,11 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 mem.update_status(data.get('id'), data.get('status'))
                 self._send_json({"success": True})
 
+            elif self.path == '/api/star':
+                data = json.loads(post_data)
+                mem.toggle_star(data.get('id'), data.get('starred'))
+                self._send_json({"success": True})
+
             elif self.path == '/api/rules':
                 data = json.loads(post_data)
                 with open(FEEDBACK_FILE, "w") as f: f.write(data.get('rules', ''))
