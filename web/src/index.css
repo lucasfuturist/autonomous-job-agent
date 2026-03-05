@@ -1,0 +1,40 @@
+:root {
+  --bg: #050505;
+  --card-bg: #0a0a0a;
+  --border: #222;
+  --accent: #00ff9d;
+  --accent-dim: rgba(0, 255, 157, 0.1);
+  --warning: #ffcc00;
+  --danger: #ff0055;
+  --interview: #00ccff;
+  --applied: #aa00ff;
+  --text-main: #e0e0e0;
+  --text-muted: #666;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-main);
+  font-family: 'Consolas', 'Monaco', monospace;
+  margin: 0;
+  padding: 20px;
+  font-size: 13px;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.live-dot {
+  color: var(--accent);
+  animation: blink 1.5s infinite;
+  margin-right: 8px;
+}
+@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }

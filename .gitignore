@@ -12,7 +12,13 @@ data/live_logs.txt
 data/output_mds/
 data/input_pdfs/
 data/*.tmp
+pdf2md/failed_pdfs
+pdf2md/submitted_pdfs
 
 # System
 .vscode/
 .idea/
+
+# node.js
+node_modules/
+package-lock.json

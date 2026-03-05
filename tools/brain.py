@@ -4,7 +4,8 @@ import os
 import glob
 import re
 import threading
-from config import OLLAMA_MODEL, MD_FOLDER, CORE_SCHEMA
+import random
+from config import OLLAMA_MODEL, MD_FOLDER, CORE_SCHEMA, BLACKLIST_KEYWORDS, USER_PREFERENCES
 
 class Brain:
     def __init__(self):
@@ -27,22 +28,27 @@ class Brain:
         return resumes
 
     def generate_initial_strategy(self):
-        print("[BRAIN] Analyzing Resume Catalog to generate schema-locked hunt strategy...")
+        # Slightly more aggressive generation
         if not self.full_resumes: return []
 
         resume_names = "\n".join(list(self.full_resumes.keys()))
+        
+        # We sample the universe to prevent token overflow while maintaining variety on boot
+        # Sample 40 terms from the massive list to show the LLM what we mean
+        sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 40))
+        
         prompt = f"""
-        You are an elite career strategist. 
-        Below is a list of highly specialized resumes.
-        {resume_names}
+        Role: Tactical Headhunter.
+        Candidate Loadouts (Resumes): {resume_names}
+        Primary Search Universe Sample: {sample_universe}... (and 60+ other niche technical domains)
         
-        TASK: Generate 5 Job Search Queries.
+        TASK: Based on the resumes and the universe, generate 10 highly specific Job Search Queries.
+        Focus on:
+        1. High-yield titles (e.g., 'Founding Systems Engineer', 'Robotics Integrator')
+        2. Niche tech (e.g., 'Deterministic RAG', 'Computational Geometry')
+        3. Hardware-Software bridges.
         
-        CRITICAL CONSTRAINTS:
-        1. DO NOT include the candidate's name (Lucas Mougeot).
-        2. You MUST ONLY use concepts from this STRICT SCHEMA: {CORE_SCHEMA}
-        
-        Output ONLY valid JSON: {{"terms": ["term1", "term2", "term3", "term4", "term5"]}}
+        Output JSON: {{"terms": ["term1", "term2", ...]}}
         """
         with self.lock:
             try:
@@ -50,21 +56,35 @@ class Brain:
                 data = json.loads(res['message']['content'])
                 terms = data.get('terms', [])
                 clean_terms = [t.replace("Lucas Mougeot", "").strip() for t in terms]
-                print(f"[BRAIN] Initial Strategy defined: {clean_terms}")
                 return clean_terms
-            except: return []
+            except: 
+                # Fallback: Pick 5 random high-value terms from the schema if LLM fails
+                return random.sample(CORE_SCHEMA, 5)
     
     def evaluate(self, job):
-        prompt = """
-        Role: Ruthless Career Strategist.
-        Task: Score this job 1-10 for a highly specialized Hybrid Engineer (AI + Hardware + Startups).
+        # 1. HARD HEURISTIC CHECK (Save GPU cycles)
+        job_text = (str(job.get('title', '')) + " " + str(job.get('company', ''))).lower()
+        for term in BLACKLIST_KEYWORDS:
+            if term.lower() in job_text:
+                print(f"[BRAIN] 🚫 Hard Reject: '{term}' found in {job.get('company')}")
+                return {"score": 0, "reason": f"Heuristic Reject: Blacklisted term '{term}' detected."}
+
+        # 2. LLM EVALUATION WITH PREFERENCES
+        prompt = f"""
+        Role: Career Strategist.
+        Task: Score job 1-10 for a versatile Software/Hardware Engineer.
         
-        STRICT SCORING RUBRIC:
-        - 9 to 10: Dream Role. Requires BOTH AI (LLMs, Agents, ML) AND Physical Systems/Robotics.
-        - 7 to 8: Strong Target. Requires EITHER advanced AI/ML OR advanced Robotics/Hardware.
-        - 1 to 6: Trash. Auto-reject if: Healthcare, Medical, Logistics/Warehouse, Sales, HR, Education, or standard Web Development. 
+        USER PREFERENCES:
+        {USER_PREFERENCES}
         
-        Output JSON ONLY: {"score": int, "reason": "One short sentence ruthless justification"}
+        SCORING RUBRIC:
+        - 0: BLACKLIST/REJECT (Matches Negative Constraints).
+        - 9-10: Perfect Match. High Agency, AI/Robotics, Founding Role.
+        - 7-8: Good Match. Strong Software Engineering, Data Engineering, or Hardware roles.
+        - 5-6: Decent. Generic Tech roles (Web Dev, QA) or "Senior" roles that are reachable.
+        - 1-4: Reject. Sales, HR, Nursing, Truck Driving, or completely non-technical.
+        
+        Output JSON: {{"score": int, "reason": "Short justification"}}
         """
         with self.lock:
             try:
@@ -77,7 +97,7 @@ class Brain:
                 return {"score": 0, "reason": f"Brain Fault: {e}"}
 
     def pick_resume_and_script(self, job):
-        if not self.full_resumes: return "Default", "# No resumes loaded in database."
+        if not self.full_resumes: return "Default", "# No resumes loaded."
 
         job_title = str(job['title']).lower()
         job_text = (job_title + " " + str(job['description'])).lower()
@@ -100,13 +120,16 @@ class Brain:
         return winner, ps_script
 
     def strategize(self, job):
+        # Sample universe for pivot context
+        sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 20))
+        
         prompt = f"""
-        We found a high-value target: "{job['title']}".
+        Target Identified: "{job['title']}".
+        Your Search Universe Sample: {sample_universe}
         
-        TASK: Suggest 2 NEW search terms to find similar cutting-edge roles.
-        
-        CRITICAL RULE: You MUST ONLY generate terms that are direct combinations of the job title and this strict schema: {CORE_SCHEMA}.
-        Do NOT invent terms outside of this schema. Keep them highly technical.
+        Suggest 2 search terms that would find 'neighboring' roles.
+        If it's a software role, suggest a hardware/systems equivalent.
+        If it's a robotics role, suggest an AI infrastructure equivalent.
         
         Output JSON: {{"terms": ["term1", "term2"]}}
         """

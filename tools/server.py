@@ -1,172 +1,116 @@
 import http.server
 import socketserver
-import os
 import sys
-from config import PORT, HTML_FILE
+import json
+import os
+import traceback
+import threading
+from config import PORT
 
-class QuietHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format, *args): pass
+# --- ROBUST IMPORT LOGIC ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
 
-class QuietServer(socketserver.TCPServer):
+try:
+    from tools.memory import Memory
+    mem = Memory()
+except Exception as e:
+    print(f"[SERVER] ⚠️ CRITICAL: Could not load Memory module.\nError: {e}")
+    traceback.print_exc()
+
+class CRMHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Silence logs to keep terminal clean
+        pass
+
+    def end_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def do_GET(self):
+        try:
+            if self.path.startswith('/api/jobs'):
+                self._handle_get_jobs()
+            elif self.path.startswith('/api/stats'):
+                self._handle_get_stats()
+            else:
+                super().do_GET()
+        except Exception as e:
+            print(f"[SERVER ERROR] Request failed: {e}")
+            self.send_error(500)
+
+    def _handle_get_jobs(self):
+        # Query Params logic
+        status_filter = None
+        if "?" in self.path:
+            query = self.path.split("?")[1]
+            if "status=" in query:
+                status_filter = query.split("status=")[1].split("&")[0]
+
+        jobs = mem.get_jobs(status_filter)
+        self._send_json(jobs)
+
+    def _handle_get_stats(self):
+        stats = mem.get_global_stats()
+        self._send_json(stats)
+
+    def _send_json(self, data):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def do_POST(self):
+        try:
+            if self.path == '/api/update_status':
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data)
+                
+                job_id = data.get('id')
+                status = data.get('status')
+                
+                if job_id and status:
+                    # print(f"[API] Updating Job {job_id} -> {status}")
+                    mem.update_status(job_id, status)
+                    self._send_json({"success": True})
+                else:
+                    self.send_error(400, "Missing id or status")
+            else:
+                self.send_error(404)
+        except Exception as e:
+            print(f"[SERVER POST ERROR] {e}")
+            self.send_error(500)
+
+# --- THREADED SERVER ---
+# This is the critical fix. It allows multiple API calls at once.
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+    
     def handle_error(self, request, client_address):
-        exc_type, exc_value, _ = sys.exc_info()
-        if "ConnectionAbortedError" in str(exc_value) or "WinError 10053" in str(exc_value):
-            return
-        super().handle_error(request, client_address)
+        # prevent minor socket errors from crashing the thread
+        pass
 
 def start_server():
-    html = """
-    <!DOCTYPE html><html><head>
-    <title>CNS // TACTICAL FEED</title>
-    <style>
-        body { background: #050505; color: #00ff9d; font-family: 'Consolas', monospace; padding: 20px; margin: 0; }
-        h1 { border-bottom: 1px solid #333; padding-bottom: 10px; font-size: 24px; text-transform: uppercase; letter-spacing: 2px; }
-        .header-row { display: flex; justify-content: space-between; align-items: center; }
-        .queue-box { background: #222; padding: 5px 15px; border: 1px solid #444; color: #ffcc00; font-weight: bold; }
-        .live-dot { color: #00ff9d; animation: blink 1.5s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
-        
-        #strategy-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-bottom: 30px; border-bottom: 1px dashed #333; padding-bottom: 20px; }
-        .strat-card { background: #0f0f0f; border: 1px solid #222; padding: 10px; font-size: 12px; }
-        .strat-term { font-weight: bold; color: #fff; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .strat-stat { color: #666; display: flex; justify-content: space-between; }
-        .val-high { color: #00ff9d; } .val-med { color: #ffcc00; } .val-low { color: #ff0055; }
+    if os.path.basename(os.getcwd()) == "tools":
+        os.chdir("..")
 
-        #feed { display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
-        .card { background: #0a0a0a; border: 1px solid #222; padding: 20px; position: relative; border-left: 3px solid #00ff9d; transition: border-color 0.2s; display: flex; flex-direction: column; }
-        .card:hover { border-color: #00ff9d; }
-        .score { position: absolute; top: 20px; right: 20px; font-size: 28px; font-weight: bold; }
-        .company { color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 4px; padding-right: 40px;}
-        .title { color: #666; font-size: 14px; margin-bottom: 15px; }
-        .resume-badge { background: rgba(0, 255, 157, 0.1); color: #00ff9d; border: 1px solid #00ff9d; padding: 4px 8px; font-size: 11px; font-weight: bold; display: inline-block; margin-bottom: 15px; }
-        .reason { color: #999; font-size: 13px; line-height: 1.5; margin-bottom: 10px; overflow-y: auto; max-height: 60px; padding-right: 5px;}
-        .script-box { width: 100%; height: 80px; background: #111; color: #00ff9d; border: 1px solid #333; font-family: monospace; font-size: 11px; padding: 8px; box-sizing: border-box; resize: vertical; margin-bottom: 15px;}
-        .actions { margin-top: auto; display: flex; gap: 10px; }
-        a, button { background: #111; color: #fff; text-decoration: none; padding: 10px 15px; font-size: 12px; font-weight: bold; border: 1px solid #333; transition: 0.2s; text-align: center; flex: 1; cursor: pointer; border-radius: 2px;}
-        a:hover, button:hover { background: #00ff9d; color: #000; }
-        .btn-copy { background: #003300; border-color: #00ff9d; color: #00ff9d;}
-        .btn-copy:hover { background: #00ff9d; color: #000; }
-        
-        /* Dark Scrollbars */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #050505; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #00ff9d; }
-    </style></head>
-    <body>
-    
-    <h1><span class="live-dot">●</span> STRATEGIC COMMAND</h1>
-    <div id="strategy-board">Loading Strategy Matrix...</div>
+    if not os.path.exists("data"):
+        os.makedirs("data")
 
-    <div class="header-row">
-        <h1><span class="live-dot">●</span> LIVE TARGET ACQUISITION (DRAGNET) <span id="feed-count" style="font-size: 12px; color: #666;"></span></h1>
-        <div id="queue-status" class="queue-box">PENDING: 0</div>
-    </div>
-    <div id="feed" style="color:#555;">Awaiting telemetry...</div>
-    
-    <script>
-    function copyScript(btn, text) {
-        navigator.clipboard.writeText(text).then(() => {
-            let originalText = btn.innerText;
-            btn.innerText = 'COPIED!';
-            btn.style.background = '#00ff9d';
-            btn.style.color = '#000';
-            setTimeout(() => { btn.innerText = originalText; btn.style.background = ''; btn.style.color = ''; }, 2000);
-        });
-    }
-
-    // State caching to prevent DOM thrashing
-    let lastMissionsStr = "";
-    let lastJobsStr = "";
-
-    async function pollTelemetry() {
-        // 1. Queue Status
-        try {
-            const res = await fetch('data/status.json');
-            const s = await res.json();
-            let box = document.getElementById('queue-status');
-            box.innerText = `PENDING: ${s.queue_size}`;
-            box.style.color = s.queue_size > 50 ? '#ff0055' : (s.queue_size > 10 ? '#ffcc00' : '#00ff9d');
-        } catch(e) {}
-
-        // 2. Strategy Board
-        try {
-            const res = await fetch('data/missions.json');
-            const text = await res.text();
-            if (text !== lastMissionsStr) {
-                lastMissionsStr = text;
-                const missions = JSON.parse(text);
-                if(missions.length > 0) {
-                    document.getElementById('strategy-board').innerHTML = missions.slice(0, 12).map(m => {
-                        let score = parseFloat(m.avg_score).toFixed(1);
-                        let colorClass = score >= 5 ? 'val-high' : (score >= 2 ? 'val-med' : 'val-low');
-                        return `
-                        <div class="strat-card" style="border-top: 2px solid ${score >= 5 ? '#00ff9d' : '#333'}">
-                            <div class="strat-term" title="${m.term}">${m.term}</div>
-                            <div class="strat-stat">
-                                <span>FOUND: ${m.total_found}</span>
-                                <span class="${colorClass}">QUAL: ${score}</span>
-                            </div>
-                        </div>`
-                    }).join('');
-                }
-            }
-        } catch(e) {}
-
-        // 3. Job Feed
-        try {
-            const res = await fetch('data/dashboard.json');
-            const text = await res.text();
-            if (text !== lastJobsStr) {
-                lastJobsStr = text;
-                const jobs = JSON.parse(text);
-                if(jobs.length > 0) {
-                    // Limit rendering to top 100 to prevent browser lag
-                    const displayJobs = jobs.slice(0, 100);
-                    document.getElementById('feed-count').innerText = `(SHOWING ${displayJobs.length} MOST RECENT OF ${jobs.length} TOTAL)`;
-                    
-                    document.getElementById('feed').innerHTML = displayJobs.map(j => {
-                        let parts = (j.reason || "").split("### DEPLOYMENT SCRIPT:");
-                        let textReason = parts[0].trim();
-                        let scriptContent = parts.length > 1 ? parts[1].trim() : '';
-                        
-                        let scriptHtml = scriptContent ? `<textarea class="script-box" readonly onclick="this.select()">${scriptContent}</textarea>` : '';
-                        let copyBtnHtml = scriptContent ? `<button class="btn-copy" onclick="copyScript(this, this.parentElement.previousElementSibling.value)">2. COPY SCRIPT</button>` : '';
-
-                        return `
-                        <div class="card">
-                            <div class="score">${j.score}</div>
-                            <div class="company">${j.company}</div>
-                            <div class="title">${j.title}</div>
-                            <div><span class="resume-badge">LOADOUT: ${j.selected_resume}.pdf</span></div>
-                            <div class="reason">${textReason}</div>
-                            ${scriptHtml}
-                            <div class="actions">
-                                <a href="${j.url}" target="_blank">1. VIEW JOB</a>
-                                ${copyBtnHtml}
-                            </div>
-                        </div>`
-                    }).join('');
-                }
-            }
-        } catch(e) {
-            console.error("Dashboard parse error", e);
-        }
-    }
-
-    // Poll async without refreshing the page
-    setInterval(pollTelemetry, 2000);
-    pollTelemetry(); // Initial call
-    </script></body></html>
-    """
-    
-    with open(HTML_FILE, "w", encoding="utf-8") as f: 
-        f.write(html)
-    
-    QuietServer.allow_reuse_address = True
     try:
-        with QuietServer(("127.0.0.1", PORT), QuietHandler) as httpd:
-            print(f"[SERVER] UI Online: http://localhost:{PORT}/{HTML_FILE}")
+        # Use the Threaded version
+        with ThreadedHTTPServer(("0.0.0.0", PORT), CRMHandler) as httpd:
+            print(f"[SERVER] API Online (Threaded): http://localhost:{PORT}")
             httpd.serve_forever()
     except Exception as e:
-        print(f"[SERVER] Failed to bind to port {PORT}. Error: {e}")
+        print(f"[SERVER] ❌ FAILED TO BIND: {e}")

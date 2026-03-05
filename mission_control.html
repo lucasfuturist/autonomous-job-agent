@@ -1,64 +1,357 @@
-
-    <!DOCTYPE html><html><head>
+<!DOCTYPE html>
+<html>
+<head>
     <title>CNS // TACTICAL FEED</title>
+    <meta charset="utf-8">
     <style>
-        body { background: #050505; color: #00ff9d; font-family: 'Consolas', monospace; padding: 20px; margin: 0; }
-        h1 { border-bottom: 1px solid #333; padding-bottom: 10px; font-size: 24px; text-transform: uppercase; letter-spacing: 2px; }
-        .header-row { display: flex; justify-content: space-between; align-items: center; }
-        .queue-box { background: #222; padding: 5px 15px; border: 1px solid #444; color: #ffcc00; font-weight: bold; }
-        .live-dot { color: #00ff9d; animation: blink 1.5s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+        :root {
+            --bg: #050505;
+            --card-bg: #0a0a0a;
+            --border: #222;
+            --accent: #00ff9d;
+            --accent-dim: rgba(0, 255, 157, 0.1);
+            --warning: #ffcc00;
+            --danger: #ff0055;
+            --interview: #00ccff;
+            --applied: #aa00ff;
+            --text-main: #e0e0e0;
+            --text-muted: #666;
+        }
+
+        body { background: var(--bg); color: var(--accent); font-family: 'Consolas', 'Monaco', monospace; padding: 20px; margin: 0; font-size: 13px; }
         
-        #strategy-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-bottom: 30px; border-bottom: 1px dashed #333; padding-bottom: 20px; }
-        .strat-card { background: #0f0f0f; border: 1px solid #222; padding: 10px; font-size: 12px; }
+        /* Typography & Layout */
+        h1 { border-bottom: 1px solid #333; padding-bottom: 10px; font-size: 20px; text-transform: uppercase; letter-spacing: 2px; margin-top: 0; }
+        .header-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 15px; flex-wrap: wrap; gap: 15px; }
+        .live-dot { color: var(--accent); animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+
+        /* Controls / Filter Bar */
+        .controls { 
+            display: flex; gap: 15px; align-items: center; background: #111; padding: 10px 15px; border: 1px solid #333; border-radius: 4px; 
+            flex-grow: 1; max-width: 900px;
+        }
+        .control-group { display: flex; align-items: center; gap: 8px; }
+        label { color: #888; font-weight: bold; font-size: 11px; text-transform: uppercase; }
+        
+        input[type="text"] { 
+            background: #000; border: 1px solid #444; color: #fff; padding: 6px 10px; font-family: inherit; font-size: 12px; width: 200px; 
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus { border-color: var(--accent); outline: none; }
+        input[type="range"] { accent-color: var(--accent); cursor: pointer; }
+        
+        select { background: #000; color: #fff; border: 1px solid #444; padding: 5px; font-family: inherit; font-size: 11px; }
+
+        .toggle-btn { 
+            background: #000; border: 1px solid #444; color: #666; padding: 5px 10px; cursor: pointer; font-size: 11px; 
+        }
+        .toggle-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+        /* Strategy Board */
+        #strategy-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 30px; border-bottom: 1px dashed #333; padding-bottom: 20px; }
+        .strat-card { background: #0f0f0f; border: 1px solid #222; padding: 10px; font-size: 11px; }
         .strat-term { font-weight: bold; color: #fff; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .strat-stat { color: #666; display: flex; justify-content: space-between; }
-        .val-high { color: #00ff9d; } .val-med { color: #ffcc00; } .val-low { color: #ff0055; }
+        .val-high { color: var(--accent); } .val-med { color: var(--warning); } .val-low { color: var(--danger); }
 
-        #feed { display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
-        .card { background: #0a0a0a; border: 1px solid #222; padding: 20px; position: relative; border-left: 3px solid #00ff9d; transition: border-color 0.2s; display: flex; flex-direction: column; }
-        .card:hover { border-color: #00ff9d; }
-        .score { position: absolute; top: 20px; right: 20px; font-size: 28px; font-weight: bold; }
-        .company { color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 4px; padding-right: 40px;}
-        .title { color: #666; font-size: 14px; margin-bottom: 15px; }
-        .resume-badge { background: rgba(0, 255, 157, 0.1); color: #00ff9d; border: 1px solid #00ff9d; padding: 4px 8px; font-size: 11px; font-weight: bold; display: inline-block; margin-bottom: 15px; }
-        .reason { color: #999; font-size: 13px; line-height: 1.5; margin-bottom: 10px; overflow-y: auto; max-height: 60px; padding-right: 5px;}
-        .script-box { width: 100%; height: 80px; background: #111; color: #00ff9d; border: 1px solid #333; font-family: monospace; font-size: 11px; padding: 8px; box-sizing: border-box; resize: vertical; margin-bottom: 15px;}
-        .actions { margin-top: auto; display: flex; gap: 10px; }
-        a, button { background: #111; color: #fff; text-decoration: none; padding: 10px 15px; font-size: 12px; font-weight: bold; border: 1px solid #333; transition: 0.2s; text-align: center; flex: 1; cursor: pointer; border-radius: 2px;}
-        a:hover, button:hover { background: #00ff9d; color: #000; }
-        .btn-copy { background: #003300; border-color: #00ff9d; color: #00ff9d;}
-        .btn-copy:hover { background: #00ff9d; color: #000; }
+        /* Job Feed Grid */
+        #feed { display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); }
         
-        /* Dark Scrollbars */
+        /* Job Card */
+        .card { 
+            background: var(--card-bg); border: 1px solid var(--border); padding: 15px; position: relative; 
+            border-left: 3px solid var(--accent); transition: all 0.2s; display: flex; flex-direction: column; 
+        }
+        .card:hover { border-color: #444; box-shadow: 0 4px 15px rgba(0,0,0,0.5); transform: translateY(-2px); }
+        
+        /* Status Styling */
+        .card.status-applied { border-left-color: var(--applied); }
+        .card.status-interview { border-left-color: var(--interview); background: #050a10; }
+        .card.status-rejected { opacity: 0.5; border-left-color: var(--danger); }
+
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .company { color: #fff; font-size: 16px; font-weight: bold; }
+        .title { color: #888; font-size: 13px; margin-top: 2px; }
+        .score-box { 
+            font-size: 20px; font-weight: bold; color: var(--accent); background: rgba(0,0,0,0.3); 
+            padding: 5px 10px; border-radius: 4px; border: 1px solid #222;
+        }
+
+        .meta-row { display: flex; gap: 10px; margin-bottom: 10px; font-size: 11px; }
+        .badge { padding: 3px 6px; border: 1px solid #333; color: #888; border-radius: 2px; }
+        .resume-badge { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+        .status-badge { font-weight: bold; text-transform: uppercase; }
+
+        .reason { 
+            color: #aaa; font-size: 12px; line-height: 1.4; margin-bottom: 15px; 
+            padding: 10px; background: #111; border-left: 2px solid #333;
+        }
+        
+        /* Actions */
+        .actions { margin-top: auto; display: flex; gap: 5px; flex-wrap: wrap; }
+        .btn { 
+            background: #111; color: #fff; text-decoration: none; padding: 8px 10px; font-size: 10px; font-weight: bold; 
+            border: 1px solid #333; transition: 0.2s; text-align: center; flex: 1; cursor: pointer; border-radius: 2px;
+            display: flex; align-items: center; justify-content: center; white-space: nowrap;
+        }
+        .btn:hover { background: #333; }
+        
+        /* Action Colors */
+        .btn-view { flex-grow: 2; border-color: #444; }
+        .btn-copy { border-color: var(--accent); color: var(--accent); flex-grow: 2;}
+        .btn-copy:hover { background: var(--accent); color: #000; }
+        
+        .btn-applied { color: var(--applied); border-color: var(--applied); }
+        .btn-applied:hover { background: var(--applied); color: #fff; }
+
+        .btn-interview { color: var(--interview); border-color: var(--interview); }
+        .btn-interview:hover { background: var(--interview); color: #fff; }
+
+        .btn-reject { color: var(--danger); border-color: var(--danger); max-width: 40px; }
+        .btn-reject:hover { background: var(--danger); color: #fff; }
+
+        .btn-toggle-script { flex: 0 0 auto; width: 30px; }
+
+        .script-container { margin-top: 10px; display: none; }
+        .script-container.show { display: block; }
+        .script-box { 
+            width: 100%; height: 60px; background: #080808; color: #777; border: 1px solid #222; 
+            font-family: monospace; font-size: 10px; padding: 8px; box-sizing: border-box; resize: vertical; 
+        }
+
+        /* Scrollbars */
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #00ff9d; }
-    </style></head>
-    <body>
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        #feed-count { font-size: 12px; color: #666; margin-left: 10px; }
+        .queue-box { background: #222; padding: 5px 15px; border: 1px solid #444; color: var(--warning); font-weight: bold; font-size: 12px;}
+    </style>
+</head>
+<body>
     
-    <h1><span class="live-dot">●</span> STRATEGIC COMMAND</h1>
+    <h1><span class="live-dot">●</span> STRATEGIC COMMAND // CRM</h1>
     <div id="strategy-board">Loading Strategy Matrix...</div>
 
     <div class="header-row">
-        <h1><span class="live-dot">●</span> LIVE TARGET ACQUISITION (DRAGNET) <span id="feed-count" style="font-size: 12px; color: #666;"></span></h1>
+        <div style="display:flex; align-items:center;">
+            <h1><span class="live-dot">●</span> PIPELINE</h1>
+            <span id="feed-count">Initializing...</span>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>Filter:</label>
+                <input type="text" id="search-input" placeholder="Search..." onkeyup="applyFilters()">
+            </div>
+            <div class="control-group">
+                <label>Score:</label>
+                <input type="range" id="score-input" min="1" max="10" value="7" step="0.5" oninput="updateScoreLabel(); applyFilters()">
+                <span id="score-val" style="color:var(--accent)">7</span>
+            </div>
+            <div class="control-group">
+                <label>Stage:</label>
+                <select id="stage-filter" onchange="applyFilters()">
+                    <option value="ALL">ALL ACTIVE</option>
+                    <option value="TARGET">TARGETS</option>
+                    <option value="APPLIED">APPLIED</option>
+                    <option value="INTERVIEW">INTERVIEW</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <button id="remote-toggle" class="toggle-btn" onclick="toggleRemote()">REMOTE</button>
+            </div>
+        </div>
+
         <div id="queue-status" class="queue-box">PENDING: 0</div>
     </div>
-    <div id="feed" style="color:#555;">Awaiting telemetry...</div>
+    
+    <div id="feed">Awaiting telemetry...</div>
     
     <script>
+    // --- STATE MANAGEMENT ---
+    let globalJobs = [];
+    let filterState = {
+        search: "",
+        minScore: 7,
+        remoteOnly: false,
+        stage: "ALL"
+    };
+
+    // Load persisted filters
+    if(localStorage.getItem('cns_filter_score')) {
+        filterState.minScore = parseFloat(localStorage.getItem('cns_filter_score'));
+        document.getElementById('score-input').value = filterState.minScore;
+        document.getElementById('score-val').innerText = filterState.minScore;
+    }
+    if(localStorage.getItem('cns_filter_remote') === 'true') {
+        filterState.remoteOnly = true;
+        document.getElementById('remote-toggle').classList.add('active');
+    }
+    if(localStorage.getItem('cns_filter_stage')) {
+        filterState.stage = localStorage.getItem('cns_filter_stage');
+        document.getElementById('stage-filter').value = filterState.stage;
+    }
+
+    // --- API INTERACTION ---
+    async function updateStatus(id, newStatus) {
+        // Optimistic UI update
+        const jobIndex = globalJobs.findIndex(j => j.id === id);
+        if(jobIndex > -1) {
+            globalJobs[jobIndex].status = newStatus;
+            applyFilters(); // Re-render immediately
+        }
+
+        try {
+            const res = await fetch('/api/update_status', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: id, status: newStatus })
+            });
+            if(!res.ok) console.error("Update failed");
+        } catch(e) {
+            console.error("Network error", e);
+        }
+    }
+
+    // --- UI HELPERS ---
+    function updateScoreLabel() {
+        const val = document.getElementById('score-input').value;
+        document.getElementById('score-val').innerText = val;
+        filterState.minScore = parseFloat(val);
+        localStorage.setItem('cns_filter_score', val);
+    }
+
+    function toggleRemote() {
+        filterState.remoteOnly = !filterState.remoteOnly;
+        const btn = document.getElementById('remote-toggle');
+        if(filterState.remoteOnly) btn.classList.add('active'); else btn.classList.remove('active');
+        localStorage.setItem('cns_filter_remote', filterState.remoteOnly);
+        applyFilters();
+    }
+
+    function toggleScript(id) {
+        const el = document.getElementById('script-' + id);
+        el.classList.toggle('show');
+    }
+
     function copyScript(btn, text) {
         navigator.clipboard.writeText(text).then(() => {
-            let originalText = btn.innerText;
-            btn.innerText = 'COPIED!';
+            let originalHTML = btn.innerHTML;
+            btn.innerHTML = 'COPIED';
             btn.style.background = '#00ff9d';
             btn.style.color = '#000';
-            setTimeout(() => { btn.innerText = originalText; btn.style.background = ''; btn.style.color = ''; }, 2000);
+            setTimeout(() => { 
+                btn.innerHTML = originalHTML; 
+                btn.style.background = ''; 
+                btn.style.color = ''; 
+            }, 2000);
         });
     }
 
-    // State caching to prevent DOM thrashing
+    // --- CORE LOGIC ---
+    function applyFilters() {
+        filterState.search = document.getElementById('search-input').value.toLowerCase();
+        filterState.stage = document.getElementById('stage-filter').value;
+        localStorage.setItem('cns_filter_stage', filterState.stage);
+
+        const filtered = globalJobs.filter(j => {
+            // Stage Filter
+            if (filterState.stage !== "ALL" && j.status !== filterState.stage) return false;
+
+            // Score Filter (Only apply min score to TARGETS; keep applied/interview visible regardless of score)
+            if (j.status === 'TARGET' && parseFloat(j.score) < filterState.minScore) return false;
+            
+            // Remote Filter
+            if (filterState.remoteOnly) {
+                const loc = (j.location || "").toLowerCase();
+                const title = (j.title || "").toLowerCase();
+                if (!loc.includes("remote") && !title.includes("remote")) return false;
+            }
+
+            // Search Filter
+            if (filterState.search) {
+                const searchStr = (j.company + " " + j.title + " " + j.search_term).toLowerCase();
+                if (!searchStr.includes(filterState.search)) return false;
+            }
+            
+            return true;
+        });
+
+        renderFeed(filtered);
+    }
+
+    function renderFeed(jobs) {
+        const feedEl = document.getElementById('feed');
+        document.getElementById('feed-count').innerText = `(SHOWING ${jobs.length})`;
+
+        if (jobs.length === 0) {
+            feedEl.innerHTML = `<div style="padding:20px; color:#666;">No targets match current filters.</div>`;
+            return;
+        }
+
+        // Limit rendering for performance
+        const displayJobs = jobs.slice(0, 100);
+
+        feedEl.innerHTML = displayJobs.map((j) => {
+            let parts = (j.reason || "").split("### DEPLOYMENT SCRIPT:");
+            let textReason = parts[0].trim();
+            let scriptContent = parts.length > 1 ? parts[1].trim() : '';
+            let uniqueId = j.id; 
+
+            textReason = textReason.replace(/(Strong Target|Dream Role)/g, '<span style="color:#00ff9d; font-weight:bold;">$1</span>');
+            
+            let statusClass = "";
+            let statusBadge = "";
+            if(j.status === 'APPLIED') { statusClass = "status-applied"; statusBadge = `<span class="badge" style="color:var(--applied); border-color:var(--applied)">APPLIED</span>`; }
+            else if(j.status === 'INTERVIEW') { statusClass = "status-interview"; statusBadge = `<span class="badge" style="color:var(--interview); border-color:var(--interview)">INTERVIEW</span>`; }
+            else if(j.status === 'OFFER') { statusClass = "status-applied"; statusBadge = `<span class="badge" style="color:#fff; background:var(--accent)">OFFER</span>`; }
+
+            let scriptHtml = '';
+            let copyBtnHtml = '';
+            
+            if (scriptContent) {
+                copyBtnHtml = `<button class="btn btn-copy" onclick="copyScript(this, document.getElementById('raw-script-${uniqueId}').value)">LOADOUT</button>`;
+            } else {
+                copyBtnHtml = `<button class="btn" style="opacity:0.3; cursor:not-allowed;">NO SCRIPT</button>`;
+            }
+
+            return `
+            <div class="card ${statusClass}">
+                <div class="card-header">
+                    <div>
+                        <div class="company">${j.company}</div>
+                        <div class="title">${j.title}</div>
+                    </div>
+                    <div class="score-box">${j.score}</div>
+                </div>
+                
+                <div class="meta-row">
+                    ${statusBadge}
+                    <span class="badge resume-badge">${j.selected_resume || "Default"}</span>
+                    <span class="badge">${j.location}</span>
+                </div>
+
+                <div class="reason">${textReason}</div>
+                
+                <div class="actions">
+                    <a href="${j.url}" target="_blank" class="btn btn-view">VIEW</a>
+                    ${copyBtnHtml}
+                    
+                    <button class="btn btn-applied" onclick="updateStatus('${uniqueId}', 'APPLIED')" title="Mark Applied">✅</button>
+                    <button class="btn btn-interview" onclick="updateStatus('${uniqueId}', 'INTERVIEW')" title="Mark Interview">🎤</button>
+                    <button class="btn btn-reject" onclick="updateStatus('${uniqueId}', 'REJECTED')" title="Trash">❌</button>
+
+                    ${scriptContent ? `<button class="btn btn-toggle-script" onclick="toggleScript('${uniqueId}')">></button>` : ''}
+                </div>
+                ${scriptContent ? `<div class="script-container" id="script-${uniqueId}"><textarea id="raw-script-${uniqueId}" class="script-box" readonly>${scriptContent}</textarea></div>` : ''}
+            </div>`
+        }).join('');
+    }
+
+    // --- POLLING & SYNC ---
     let lastMissionsStr = "";
     let lastJobsStr = "";
 
@@ -102,43 +395,17 @@
             const text = await res.text();
             if (text !== lastJobsStr) {
                 lastJobsStr = text;
-                const jobs = JSON.parse(text);
-                if(jobs.length > 0) {
-                    // Limit rendering to top 100 to prevent browser lag
-                    const displayJobs = jobs.slice(0, 100);
-                    document.getElementById('feed-count').innerText = `(SHOWING ${displayJobs.length} MOST RECENT OF ${jobs.length} TOTAL)`;
-                    
-                    document.getElementById('feed').innerHTML = displayJobs.map(j => {
-                        let parts = (j.reason || "").split("### DEPLOYMENT SCRIPT:");
-                        let textReason = parts[0].trim();
-                        let scriptContent = parts.length > 1 ? parts[1].trim() : '';
-                        
-                        let scriptHtml = scriptContent ? `<textarea class="script-box" readonly onclick="this.select()">${scriptContent}</textarea>` : '';
-                        let copyBtnHtml = scriptContent ? `<button class="btn-copy" onclick="copyScript(this, this.parentElement.previousElementSibling.value)">2. COPY SCRIPT</button>` : '';
-
-                        return `
-                        <div class="card">
-                            <div class="score">${j.score}</div>
-                            <div class="company">${j.company}</div>
-                            <div class="title">${j.title}</div>
-                            <div><span class="resume-badge">LOADOUT: ${j.selected_resume}.pdf</span></div>
-                            <div class="reason">${textReason}</div>
-                            ${scriptHtml}
-                            <div class="actions">
-                                <a href="${j.url}" target="_blank">1. VIEW JOB</a>
-                                ${copyBtnHtml}
-                            </div>
-                        </div>`
-                    }).join('');
-                }
+                globalJobs = JSON.parse(text);
+                applyFilters();
             }
         } catch(e) {
             console.error("Dashboard parse error", e);
         }
     }
 
-    // Poll async without refreshing the page
+    // Initialize
     setInterval(pollTelemetry, 2000);
-    pollTelemetry(); // Initial call
-    </script></body></html>
-    
+    pollTelemetry();
+    </script>
+</body>
+</html>

@@ -29,6 +29,41 @@ class Memory:
         conn.commit()
         conn.close()
 
+    # --- READ OPERATIONS (API) ---
+    def get_jobs(self, status=None):
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        
+        if status and status != "ALL":
+            rows = conn.execute("SELECT * FROM jobs WHERE status = ? ORDER BY found_at DESC", (status,)).fetchall()
+        else:
+            # REMOVED LIMIT 500. UI now handles rendering limits for performance.
+            rows = conn.execute("""
+                SELECT * FROM jobs 
+                WHERE status IN ('TARGET', 'APPLIED', 'INTERVIEW', 'OFFER') 
+                ORDER BY found_at DESC
+            """).fetchall()
+            
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_global_stats(self):
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        
+        stats = {}
+        rows = conn.execute("SELECT status, COUNT(*) as count FROM jobs GROUP BY status").fetchall()
+        stats['pipeline'] = {r['status']: r['count'] for r in rows}
+        stats['total_scanned'] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        stats['avg_quality'] = conn.execute("SELECT AVG(score) FROM jobs WHERE status != 'REJECTED'").fetchone()[0] or 0
+        
+        mission_rows = conn.execute("SELECT term, avg_score, total_found FROM missions ORDER BY avg_score DESC LIMIT 5").fetchall()
+        stats['strategies'] = [dict(r) for r in mission_rows]
+        
+        conn.close()
+        return stats
+
+    # --- WRITE OPERATIONS ---
     def job_exists(self, url, company, title):
         conn = self._get_conn()
         res = conn.execute('''SELECT 1 FROM jobs 
@@ -51,12 +86,37 @@ class Memory:
 
     def update_job(self, url, score, reason, resume):
         conn = self._get_conn()
-        status = "TARGET" if score >= MIN_SCORE else "REJECTED"
-        conn.execute("UPDATE jobs SET score=?, reason=?, selected_resume=?, status=? WHERE url=?", 
-                     (score, reason, resume, status, url))
+        status_logic = f"CASE WHEN status = 'PENDING' AND {score} >= {MIN_SCORE} THEN 'TARGET' WHEN status = 'PENDING' THEN 'REJECTED' ELSE status END"
+        conn.execute(f"UPDATE jobs SET score=?, reason=?, selected_resume=?, status={status_logic} WHERE url=?", 
+                     (score, reason, resume, url))
         conn.commit()
         conn.close()
         if score >= MIN_SCORE: self.export_dashboard()
+
+    def update_status(self, job_id, new_status):
+        conn = self._get_conn()
+        conn.execute("UPDATE jobs SET status = ? WHERE id = ?", (new_status, job_id))
+        conn.commit()
+        conn.close()
+        self.export_dashboard() 
+
+    # --- INTERNAL ---
+    def get_gravitational_term(self):
+        conn = self._get_conn()
+        rows = conn.execute('''SELECT term FROM missions 
+                               WHERE avg_score >= 5 AND total_found > 0
+                               ORDER BY (total_found * avg_score) DESC 
+                               LIMIT 5''').fetchall()
+        conn.close()
+        if rows: return random.choice(rows)[0]
+        return None
+
+    def get_stale_jobs(self):
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('''SELECT * FROM jobs WHERE status = 'PENDING' ''').fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
     def log_mission_results(self, term, found_count, avg_score):
         conn = self._get_conn()
@@ -79,34 +139,9 @@ class Memory:
         conn.close()
         self.export_missions()
 
-    def get_gravitational_term(self):
-        """Pulls the best performing term based on Quantity * Quality."""
-        conn = self._get_conn()
-        # Fetch top 5 most successful terms to add slight variation
-        rows = conn.execute('''SELECT term FROM missions 
-                               WHERE avg_score >= 5 AND total_found > 0
-                               ORDER BY (total_found * avg_score) DESC 
-                               LIMIT 5''').fetchall()
-        conn.close()
-        if rows:
-            return random.choice(rows)[0]
-        return None
-
-    def get_stale_jobs(self):
-        conn = self._get_conn()
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute('''SELECT * FROM jobs 
-                               WHERE status = 'PENDING' ''').fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
-
     def export_dashboard(self):
-        conn = self._get_conn()
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT * FROM jobs WHERE status = 'TARGET' ORDER BY found_at DESC LIMIT 500").fetchall()
-        conn.close()
-        data = [dict(row) for row in rows]
-        with open(JSON_FEED + ".tmp", "w") as f: json.dump(data, f)
+        jobs = self.get_jobs()
+        with open(JSON_FEED + ".tmp", "w") as f: json.dump(jobs[:500], f) # Cap JSON backup, API is uncapped
         os.replace(JSON_FEED + ".tmp", JSON_FEED)
 
     def export_missions(self):
