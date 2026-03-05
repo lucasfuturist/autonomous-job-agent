@@ -5,7 +5,8 @@ import json
 import os
 import traceback
 import threading
-from config import PORT
+import glob
+from config import PORT, MD_FOLDER
 
 # --- ROBUST IMPORT LOGIC ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +50,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_agenda()
             elif self.path.startswith('/api/logs'):
                 self._handle_get_logs()
+            elif self.path.startswith('/api/resume'):
+                self._handle_get_resume()
             else:
                 super().do_GET()
         except Exception as e:
@@ -85,6 +88,36 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_get_logs(self):
         logs = mem.get_mission_logs(limit=50)
         self._send_json(logs)
+
+    def _handle_get_resume(self):
+        # Parse query param for name
+        if "?" not in self.path or "name=" not in self.path:
+            self.send_error(400, "Missing name parameter")
+            return
+            
+        query = self.path.split("?")[1]
+        name_param = [p.split("=")[1] for p in query.split("&") if p.startswith("name=")][0]
+        # Security: basic sanitization to prevent directory traversal
+        clean_name = os.path.basename(name_param) 
+        
+        # Look for the file in MD_FOLDER
+        target_path = os.path.join(MD_FOLDER, f"{clean_name}.md")
+        
+        # Fallback: Sometimes extension isn't passed, or file might be in subfolder (though flat structure preferred)
+        # We will try exact match first
+        content = ""
+        if os.path.exists(target_path):
+            with open(target_path, "r", encoding="utf-8") as f: content = f.read()
+        else:
+            # Search recursively if not found (matching logic in Brain)
+            search_pattern = os.path.join(MD_FOLDER, "**", f"{clean_name}.md")
+            matches = glob.glob(search_pattern, recursive=True)
+            if matches:
+                with open(matches[0], "r", encoding="utf-8") as f: content = f.read()
+            else:
+                content = "# Resume Not Found on Disk"
+        
+        self._send_json({"content": content})
 
     def _send_json(self, data):
         self.send_response(200)
