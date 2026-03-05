@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, MapPin, Wifi, Loader2 } from 'lucide-react';
 import JobCard from '../components/JobCard';
+import JobModal from '../components/JobModal';
 
 export default function Board() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedJob, setSelectedJob] = useState(null); // Modal State
   
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState(localStorage.getItem('cns_board_state') || 'ALL');
@@ -29,12 +31,28 @@ export default function Board() {
     return () => clearInterval(interval);
   }, []);
 
+  // Sync modal state
+  useEffect(() => {
+    if (selectedJob) {
+        const updated = jobs.find(j => j.id === selectedJob.id);
+        if (updated) setSelectedJob(updated);
+    }
+  }, [jobs]);
+
   const handleUpdateStatus = async (id, newStatus) => {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: newStatus } : j));
     await fetch('/api/update_status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus })
+    });
+  };
+
+  const handleToggleStar = async (id, starred) => {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, starred: starred } : j));
+    await fetch('/api/star', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, starred })
     });
   };
 
@@ -72,7 +90,8 @@ export default function Board() {
     { id: 'TARGET', title: '🎯 TARGETS', color: '#fff' },
     { id: 'APPLIED', title: '✅ APPLIED', color: 'var(--applied)' },
     { id: 'INTERVIEW', title: '🎤 INTERVIEW', color: 'var(--interview)' },
-    { id: 'OFFER', title: '🏆 OFFER', color: 'var(--accent)' }
+    { id: 'OFFER', title: '🏆 OFFER', color: 'var(--accent)' },
+    { id: 'REJECTED', title: '❌ TRASH', color: 'var(--danger)' }
   ];
 
   if (loading) return <div style={{ padding: '20px', display: 'flex', gap: '10px' }}><Loader2 className="live-dot" /> Loading War Room...</div>;
@@ -80,6 +99,14 @@ export default function Board() {
   return (
     <div style={{ height: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }}>
       
+      {/* MODAL */}
+      <JobModal 
+        job={selectedJob} 
+        onClose={() => setSelectedJob(null)} 
+        onUpdateStatus={handleUpdateStatus} 
+        onToggleStar={handleToggleStar} 
+      />
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1 style={{ fontSize: '24px', margin: 0 }}>WAR ROOM</h1>
 
@@ -111,7 +138,6 @@ export default function Board() {
       <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', flexGrow: 1, paddingBottom: '10px' }}>
         {columns.map(col => {
           const colJobs = filteredJobs.filter(j => j.status === col.id);
-          // Kanban cap - only render top 100 per column to prevent DOM lag on massive boards
           const displayJobs = colJobs.slice(0, 100);
           
           return (
@@ -126,7 +152,14 @@ export default function Board() {
               </div>
               <div style={{ padding: '10px', overflowY: 'auto', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {displayJobs.map(job => (
-                  <JobCard key={job.id} job={job} onUpdateStatus={handleUpdateStatus} compact={true} />
+                  <JobCard 
+                    key={job.id} 
+                    job={job} 
+                    onUpdateStatus={handleUpdateStatus} 
+                    onToggleStar={handleToggleStar}
+                    onClick={setSelectedJob}
+                    compact={true} 
+                  />
                 ))}
                 {colJobs.length > 100 && (
                    <div style={{ textAlign: 'center', padding: '10px', fontSize: '11px', color: '#666', fontStyle: 'italic' }}>

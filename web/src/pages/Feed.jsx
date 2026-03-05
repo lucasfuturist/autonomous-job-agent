@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star } from 'lucide-react';
 import JobCard from '../components/JobCard';
+import JobModal from '../components/JobModal';
 
 export default function Feed() {
   const [jobs, setJobs] = useState([]);
   const [queueSize, setQueueSize] = useState(0);
   const [displayLimit, setDisplayLimit] = useState(100);
+  const [selectedJob, setSelectedJob] = useState(null); // Modal State
   
   // Tactical Controls
   const [showRules, setShowRules] = useState(false);
@@ -17,7 +19,7 @@ export default function Feed() {
   const [minScore, setMinScore] = useState(parseFloat(localStorage.getItem('cns_score') || 5));
   const [remoteOnly, setRemoteOnly] = useState(localStorage.getItem('cns_remote') === 'true');
   const [stateFilter, setStateFilter] = useState(localStorage.getItem('cns_state') || 'ALL');
-  const [starsOnly, setStarsOnly] = useState(false); // New Filter
+  const [starsOnly, setStarsOnly] = useState(false);
 
   useEffect(() => { localStorage.setItem('cns_score', minScore) }, [minScore]);
   useEffect(() => { localStorage.setItem('cns_remote', remoteOnly) }, [remoteOnly]);
@@ -55,6 +57,14 @@ export default function Feed() {
     const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  // Sync modal state if background data updates
+  useEffect(() => {
+    if (selectedJob) {
+        const updated = jobs.find(j => j.id === selectedJob.id);
+        if (updated) setSelectedJob(updated);
+    }
+  }, [jobs]);
 
   const handleUpdateStatus = async (id, newStatus) => {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: newStatus } : j));
@@ -103,7 +113,6 @@ export default function Feed() {
   const filteredJobs = jobs.filter(j => {
     if (j.status !== 'TARGET') return false; 
     
-    // Star filter override or Score check
     if (starsOnly) {
         if (!j.starred) return false;
     } else {
@@ -130,6 +139,14 @@ export default function Feed() {
 
   return (
     <div>
+      {/* MODAL */}
+      <JobModal 
+        job={selectedJob} 
+        onClose={() => setSelectedJob(null)} 
+        onUpdateStatus={handleUpdateStatus} 
+        onToggleStar={handleToggleStar} 
+      />
+
       {/* TACTICAL CONTROLS */}
       <div style={{ marginBottom: '15px' }}>
          <button onClick={() => setShowRules(!showRules)} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 15px', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -214,7 +231,13 @@ export default function Feed() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))', gap: '15px' }}>
         {filteredJobs.length === 0 && <div style={{ color: '#666', padding: '20px' }}>No targets found. Try lowering score or widening search.</div>}
         {visibleJobs.map(job => (
-          <JobCard key={job.id} job={job} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} />
+          <JobCard 
+            key={job.id} 
+            job={job} 
+            onUpdateStatus={handleUpdateStatus} 
+            onToggleStar={handleToggleStar} 
+            onClick={setSelectedJob} 
+          />
         ))}
       </div>
 

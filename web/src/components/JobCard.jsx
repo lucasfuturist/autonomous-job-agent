@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, Trash2 } from 'lucide-react';
+import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star } from 'lucide-react';
 
-export default function JobCard({ job, onUpdateStatus, onToggleStar, compact = false }) {
+export default function JobCard({ job, onUpdateStatus, onToggleStar, onClick, compact = false }) {
   const [showScript, setShowScript] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -9,11 +9,14 @@ export default function JobCard({ job, onUpdateStatus, onToggleStar, compact = f
   const reasonText = parts[0].trim();
   const scriptContent = parts.length > 1 ? parts[1].trim() : null;
 
-  const handleCopy = () => {
+  const handleCopy = (e) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(scriptContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const stopProp = (e) => e.stopPropagation();
 
   // Status Styling
   let borderStyle = '3px solid var(--accent)';
@@ -26,11 +29,15 @@ export default function JobCard({ job, onUpdateStatus, onToggleStar, compact = f
   const isStarred = job.starred === 1 || job.starred === true;
 
   return (
-    <div style={{ 
-      background: bgStyle, border: '1px solid #222', borderLeft: borderStyle, 
-      padding: '10px', display: 'flex', flexDirection: 'column', position: 'relative',
-      fontSize: compact ? '11px' : '13px'
-    }}>
+    <div 
+      onClick={() => onClick && onClick(job)}
+      style={{ 
+        background: bgStyle, border: '1px solid #222', borderLeft: borderStyle, 
+        padding: '10px', display: 'flex', flexDirection: 'column', position: 'relative',
+        fontSize: compact ? '11px' : '13px', cursor: 'pointer', transition: 'transform 0.1s'
+      }}
+      className="job-card-hover"
+    >
       
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
@@ -42,17 +49,17 @@ export default function JobCard({ job, onUpdateStatus, onToggleStar, compact = f
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {/* Star Toggle */}
             <button 
-                onClick={() => onToggleStar(job.id, !isStarred)}
+                onClick={(e) => { stopProp(e); onToggleStar(job.id, !isStarred); }}
                 style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: isStarred ? 'gold' : '#333' }}
             >
                 <Star size={16} fill={isStarred ? "gold" : "none"} />
             </button>
 
             <div style={{ 
-            fontSize: compact ? '14px' : '20px', fontWeight: 'bold', color: 'var(--accent)', 
-            background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', height: 'fit-content' 
+              fontSize: compact ? '14px' : '20px', fontWeight: 'bold', color: 'var(--accent)', 
+              background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', height: 'fit-content' 
             }}>
-            {job.score}
+              {job.score}
             </div>
         </div>
       </div>
@@ -65,11 +72,16 @@ export default function JobCard({ job, onUpdateStatus, onToggleStar, compact = f
 
       {/* Script Box (Hidden in Compact unless toggled) */}
       {showScript && scriptContent && (
-        <textarea readOnly value={scriptContent} onClick={(e) => e.target.select()} style={{ width: '100%', height: '60px', background: '#080808', color: '#777', border: '1px solid #333', marginBottom: '10px' }} />
+        <textarea 
+          readOnly 
+          value={scriptContent} 
+          onClick={stopProp} 
+          style={{ width: '100%', height: '60px', background: '#080808', color: '#777', border: '1px solid #333', marginBottom: '10px' }} 
+        />
       )}
 
       {/* Actions */}
-      <div style={{ marginTop: 'auto', display: 'flex', gap: '4px' }}>
+      <div style={{ marginTop: 'auto', display: 'flex', gap: '4px' }} onClick={stopProp}>
         <a href={job.url} target="_blank" style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px' }}>
           <ExternalLink size={12} />
         </a>
@@ -88,25 +100,25 @@ export default function JobCard({ job, onUpdateStatus, onToggleStar, compact = f
             </>
         )}
         
-        {/* Workflow Buttons - APPLIED (Includes Undo) */}
+        {/* Workflow Buttons - APPLIED */}
         {job.status === 'APPLIED' && (
             <>
-                <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Undo (Back to Target)" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
                 <button onClick={() => onUpdateStatus(job.id, 'INTERVIEW')} title="Mark Interview" style={{ background: '#111', border: '1px solid var(--interview)', color: 'var(--interview)', padding: '6px', borderRadius: '3px' }}><Mic size={14} /></button>
             </>
         )}
         
-        {/* Workflow Buttons - INTERVIEW (Includes Undo) */}
+        {/* Workflow Buttons - INTERVIEW */}
         {job.status === 'INTERVIEW' && (
             <>
-                <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Undo (Back to Applied)" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
                 <button onClick={() => onUpdateStatus(job.id, 'OFFER')} title="Mark Offer" style={{ background: '#111', border: '1px solid #fff', color: '#fff', padding: '6px', borderRadius: '3px' }}><ArrowRight size={14} /></button>
             </>
         )}
 
-        {/* Workflow Buttons - REJECTED (Restore) */}
+        {/* Workflow Buttons - REJECTED */}
         {job.status === 'REJECTED' && (
-            <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Restore to Target" style={{ flexGrow: 1, background: '#111', border: '1px solid #444', color: '#fff', padding: '6px', borderRadius: '3px', display:'flex', justifyContent:'center', gap:'5px', alignItems:'center' }}>
+            <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Restore" style={{ flexGrow: 1, background: '#111', border: '1px solid #444', color: '#fff', padding: '6px', borderRadius: '3px', display:'flex', justifyContent:'center', gap:'5px', alignItems:'center' }}>
                 <RotateCcw size={14} /> RESTORE
             </button>
         )}
