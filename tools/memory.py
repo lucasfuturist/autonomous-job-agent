@@ -20,12 +20,27 @@ class Memory:
                       selected_resume TEXT, status TEXT DEFAULT 'PENDING',
                       found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
+        # Aggregate Stats (Strategy Profile)
         c.execute('''CREATE TABLE IF NOT EXISTS missions
                      (term TEXT PRIMARY KEY,
                       last_searched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                       times_searched INTEGER DEFAULT 0,
                       total_found INTEGER DEFAULT 0,
                       avg_score REAL DEFAULT 0.0)''')
+        
+        # NEW: Granular Audit Log (History)
+        c.execute('''CREATE TABLE IF NOT EXISTS mission_logs
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      term TEXT,
+                      run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      items_found INTEGER,
+                      items_new INTEGER)''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS agenda
+                     (term TEXT PRIMARY KEY,
+                      added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      source TEXT DEFAULT 'SYSTEM',
+                      status TEXT DEFAULT 'PENDING')''')
         conn.commit()
         conn.close()
 
@@ -37,7 +52,6 @@ class Memory:
         if status and status != "ALL":
             rows = conn.execute("SELECT * FROM jobs WHERE status = ? ORDER BY found_at DESC", (status,)).fetchall()
         else:
-            # REMOVED LIMIT 500. UI now handles rendering limits for performance.
             rows = conn.execute("""
                 SELECT * FROM jobs 
                 WHERE status IN ('TARGET', 'APPLIED', 'INTERVIEW', 'OFFER') 
@@ -62,6 +76,13 @@ class Memory:
         
         conn.close()
         return stats
+    
+    def get_mission_logs(self, limit=50):
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM mission_logs ORDER BY run_at DESC LIMIT ?", (limit,)).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
     # --- WRITE OPERATIONS ---
     def job_exists(self, url, company, title):
@@ -100,16 +121,71 @@ class Memory:
         conn.close()
         self.export_dashboard() 
 
-    # --- INTERNAL ---
-    def get_gravitational_term(self):
+    # --- AGENDA OPERATIONS ---
+    def add_to_agenda(self, terms, source='SYSTEM'):
+        if not terms: return
+        if isinstance(terms, str): terms = [terms]
+        
         conn = self._get_conn()
-        rows = conn.execute('''SELECT term FROM missions 
-                               WHERE avg_score >= 5 AND total_found > 0
-                               ORDER BY (total_found * avg_score) DESC 
-                               LIMIT 5''').fetchall()
+        count = 0
+        for term in terms:
+            try:
+                conn.execute("INSERT OR IGNORE INTO agenda (term, source) VALUES (?, ?)", (term, source))
+                count += 1
+            except: pass
+        conn.commit()
+        conn.close()
+        if count > 0:
+            print(f"[MEMORY] 📅 Added {count} terms to Persistent Agenda.")
+
+    def get_next_agenda_item(self):
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT term FROM agenda WHERE status='PENDING' ORDER BY added_at ASC LIMIT 1").fetchone()
+        
+        term = None
+        if row:
+            term = row['term']
+            conn.execute("DELETE FROM agenda WHERE term = ?", (term,))
+            conn.commit()
+            
+        conn.close()
+        return term
+
+    def get_agenda_status(self):
+        conn = self._get_conn()
+        count = conn.execute("SELECT COUNT(*) FROM agenda WHERE status='PENDING'").fetchone()[0]
+        conn.close()
+        return count
+
+    # --- HISTORY & STRATEGY ---
+    def get_gravitational_term(self, cooldown_hours=24):
+        conn = self._get_conn()
+        # Select high-performing terms that haven't been searched in the last X hours
+        query = f'''SELECT term FROM missions 
+                    WHERE avg_score >= 5 
+                    AND total_found > 0
+                    AND last_searched < datetime('now', '-{cooldown_hours} hours')
+                    ORDER BY (total_found * avg_score) DESC 
+                    LIMIT 5'''
+        rows = conn.execute(query).fetchall()
         conn.close()
         if rows: return random.choice(rows)[0]
         return None
+
+    def filter_cooldown_terms(self, terms, hours=24):
+        if not terms: return []
+        conn = self._get_conn()
+        # Get terms searched recently
+        placeholders = ','.join('?' for _ in terms)
+        query = f'''SELECT term FROM missions 
+                    WHERE term IN ({placeholders}) 
+                    AND last_searched > datetime('now', '-{hours} hours')'''
+        
+        recently_searched = {row[0] for row in conn.execute(query, terms).fetchall()}
+        conn.close()
+        
+        return [t for t in terms if t not in recently_searched]
 
     def get_stale_jobs(self):
         conn = self._get_conn()
@@ -118,8 +194,10 @@ class Memory:
         conn.close()
         return [dict(r) for r in rows]
 
-    def log_mission_results(self, term, found_count, avg_score):
+    def log_mission_results(self, term, found_count, new_count, avg_score=0):
         conn = self._get_conn()
+        
+        # 1. Update Aggregate Stats (Upsert)
         conn.execute('''INSERT INTO missions (term, times_searched, total_found, avg_score) 
                         VALUES (?, 1, ?, ?)
                         ON CONFLICT(term) DO UPDATE SET 
@@ -127,6 +205,11 @@ class Memory:
                         times_searched=times_searched + 1,
                         total_found=total_found + ?''',
                      (term, found_count, avg_score, found_count))
+        
+        # 2. Log History Event
+        conn.execute("INSERT INTO mission_logs (term, items_found, items_new) VALUES (?, ?, ?)", 
+                     (term, found_count, new_count))
+        
         conn.commit()
         conn.close()
         self.export_missions()
@@ -141,7 +224,7 @@ class Memory:
 
     def export_dashboard(self):
         jobs = self.get_jobs()
-        with open(JSON_FEED + ".tmp", "w") as f: json.dump(jobs[:500], f) # Cap JSON backup, API is uncapped
+        with open(JSON_FEED + ".tmp", "w") as f: json.dump(jobs[:500], f)
         os.replace(JSON_FEED + ".tmp", JSON_FEED)
 
     def export_missions(self):

@@ -16,7 +16,7 @@ if parent_dir not in sys.path:
 try:
     from tools.memory import Memory
     mem = Memory()
-    import reweigh_queue # Import the assimilation module
+    import reweigh_queue
 except Exception as e:
     print(f"[SERVER] ⚠️ CRITICAL: Could not load Memory module.\nError: {e}")
     traceback.print_exc()
@@ -25,7 +25,6 @@ FEEDBACK_FILE = "data/tactical_feedback.txt"
 
 class CRMHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
-        # Silence logs to keep terminal clean
         pass
 
     def end_headers(self):
@@ -46,6 +45,10 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_stats()
             elif self.path.startswith('/api/rules'):
                 self._handle_get_rules()
+            elif self.path.startswith('/api/agenda'):
+                self._handle_get_agenda()
+            elif self.path.startswith('/api/logs'):
+                self._handle_get_logs()
             else:
                 super().do_GET()
         except Exception as e:
@@ -72,6 +75,17 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
         with open(FEEDBACK_FILE, "r") as f:
             self._send_json({"rules": f.read()})
 
+    def _handle_get_agenda(self):
+        conn = mem._get_conn()
+        conn.row_factory = lambda cursor, row: row[0]
+        terms = conn.execute("SELECT term FROM agenda WHERE status='PENDING' ORDER BY added_at ASC").fetchall()
+        conn.close()
+        self._send_json({"agenda": terms, "count": len(terms)})
+
+    def _handle_get_logs(self):
+        logs = mem.get_mission_logs(limit=50)
+        self._send_json(logs)
+
     def _send_json(self, data):
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
@@ -85,27 +99,27 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             
             if self.path == '/api/update_status':
                 data = json.loads(post_data)
-                job_id = data.get('id')
-                status = data.get('status')
-                if job_id and status:
-                    mem.update_status(job_id, status)
-                    self._send_json({"success": True})
-                else:
-                    self.send_error(400, "Missing id or status")
+                mem.update_status(data.get('id'), data.get('status'))
+                self._send_json({"success": True})
 
             elif self.path == '/api/rules':
                 data = json.loads(post_data)
-                rules = data.get('rules', '')
-                with open(FEEDBACK_FILE, "w") as f:
-                    f.write(rules)
+                with open(FEEDBACK_FILE, "w") as f: f.write(data.get('rules', ''))
                 self._send_json({"success": True})
             
             elif self.path == '/api/rescore':
-                # Spawn background thread for assimilation to avoid blocking
-                print("[SERVER] Triggering Assimilation Protocol...")
                 threading.Thread(target=reweigh_queue.run_assimilation, daemon=True).start()
-                self._send_json({"success": True, "message": "Assimilation started."})
-
+                self._send_json({"success": True})
+            
+            elif self.path == '/api/agenda':
+                data = json.loads(post_data)
+                term = data.get('term')
+                if term:
+                    print(f"[SERVER] 📥 Manual Mission Injection: {term}")
+                    mem.add_to_agenda(term, source='USER')
+                    self._send_json({"success": True})
+                else:
+                    self.send_error(400)
             else:
                 self.send_error(404)
         except Exception as e:
@@ -126,7 +140,6 @@ def start_server():
     if not os.path.exists("data"):
         os.makedirs("data")
     
-    # Create empty rules file if not exists
     if not os.path.exists(FEEDBACK_FILE):
         with open(FEEDBACK_FILE, "w") as f: f.write("")
 

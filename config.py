@@ -152,5 +152,5 @@ CORE_SCHEMA = [
 # --- PERFORMANCE & MODES ---
 MIN_SCORE = 7            # The minimum LLM score required to deploy a resume
 SWEEP_DEPTH = 100        # Exhaustive search: Pull up to 100 jobs per term per location
-NUM_ANALYSTS = 2         # Dual-thread LLM evaluation
+NUM_ANALYSTS = 4         # Multi-thread LLM evaluation
 MAX_QUEUE_DEPTH = 50     # If queue > 50, Hunter sleeps (Matching Mode)

@@ -13,29 +13,29 @@ mem = Memory()
 brain = Brain()
 
 job_queue = queue.Queue()     
-search_queue = queue.Queue()  
-seen_terms = set()
 
 def hunter_loop():
-    print("[CNS] Booting Hunter...")
+    print("[CNS] Booting Hunter (Persistent Mode)...")
     
-    autonomous_seeds = brain.generate_initial_strategy()
-    if not autonomous_seeds:
-        autonomous_seeds = ["AI Engineer", "Robotics Engineer"]
-        
-    for t in autonomous_seeds: 
-        search_queue.put(t)
-        seen_terms.add(t)
-        
-    print(f"[CNS] Hunter Armed with {len(autonomous_seeds)} schema-locked strategies.")
+    # 1. Boot Check
+    if mem.get_agenda_status() == 0:
+        print("[CNS] 📭 Agenda empty. Generating initial strategy...")
+        autonomous_seeds = brain.generate_initial_strategy()
+        # Filter logic is inside loop mostly, but here for safety
+        if not autonomous_seeds:
+            autonomous_seeds = ["AI Engineer", "Robotics Engineer"]
+        mem.add_to_agenda(autonomous_seeds, source='SYSTEM')
+    else:
+        print(f"[CNS] 📅 Resuming with {mem.get_agenda_status()} items in Agenda.")
     
     hunting_active = True
     
     while True:
+        # 2. Backpressure
         current_depth = job_queue.qsize()
         if current_depth >= MAX_QUEUE_DEPTH:
             if hunting_active:
-                print(f"[CNS] 🛑 MATCHING MODE ENGAGED. Backlog ({current_depth}) exceeds limit ({MAX_QUEUE_DEPTH}). Hunter sleeping...")
+                print(f"[CNS] 🛑 MATCHING MODE ENGAGED. Backlog ({current_depth}) exceeds limit. Hunter sleeping...")
                 hunting_active = False
             time.sleep(10)
             continue
@@ -44,20 +44,38 @@ def hunter_loop():
                 print(f"[CNS] 🟢 HUNTING MODE ENGAGED. Backlog cleared ({current_depth}). Resuming sweeps...")
                 hunting_active = True
             
-        try:
-            term = search_queue.get(timeout=5)
-        except queue.Empty:
-            # GRAVITATIONAL ROUTING: Mathematically pull the highest yielding term
-            gravity_term = mem.get_gravitational_term()
-            term = gravity_term if gravity_term else random.choice(list(seen_terms))
-            print(f"[CNS] 🪐 Gravity Pull: Refocusing on high-yield term '{term}'")
+        # 3. Fetch Agenda
+        term = mem.get_next_agenda_item()
         
+        # 4. If Agenda Dry, Replenish (With Cooldowns)
+        if not term:
+            # Gravity: Only pull high-yield terms not searched in last 24h
+            gravity_term = mem.get_gravitational_term(cooldown_hours=24)
+            if gravity_term:
+                print(f"[CNS] 🪐 Gravity Pull: Re-queueing high-yield term '{gravity_term}' (Cooldown passed)")
+                term = gravity_term
+            else:
+                # Brainstorm: Get new ideas, filtering out anything searched in last 24h
+                print("[CNS] 🧠 Agenda exhausted. Brainstorming new vector...")
+                new_terms = brain.generate_initial_strategy()
+                filtered_terms = mem.filter_cooldown_terms(new_terms, hours=24)
+                
+                if filtered_terms:
+                    mem.add_to_agenda(filtered_terms)
+                    time.sleep(2) # Give DB a sec
+                    continue
+                else:
+                    print("[CNS] 😴 All viable strategies on cooldown. Sleeping 60s...")
+                    time.sleep(60)
+                    continue
+
+        print(f"[CNS] 🔭 Executing Mission: '{term}'")
+        
+        # 5. Execute Sweep
         loc = random.choice(LOCATIONS)
         is_remote = (loc == "Remote")
         
         results = perform_sweep(term, "USA" if is_remote else loc, is_remote)
-        
-        mem.log_mission_results(term, len(results), 0)
         
         new_count = 0
         for job in results:
@@ -65,8 +83,11 @@ def hunter_loop():
                 job_queue.put(job)
                 new_count += 1
         
-        print(f"[CNS] Hunter found {new_count} new targets for '{term}'")
-        search_queue.task_done()
+        # Log History (Items Found vs New Unique Items)
+        mem.log_mission_results(term, len(results), new_count, 0)
+        
+        print(f"[CNS] Hunter found {new_count} new targets (of {len(results)} scraped) for '{term}'")
+        
         time.sleep(random.randint(15, 30))
 
 def analyst_loop(worker_id):
@@ -89,13 +110,13 @@ def analyst_loop(worker_id):
         resume, ps_script = brain.pick_resume_and_script(job)
         reason = f"{reason}\n\n### DEPLOYMENT SCRIPT:\n{ps_script}"
         
+        # Strategy Evolution
         if score >= 8 and job_queue.qsize() < 10:
             new_terms = brain.strategize(job)
-            for t in new_terms:
-                if t not in seen_terms:
-                    print(f"    >>> EVOLVING: Adding '{t}' to search queue")
-                    search_queue.put(t)
-                    seen_terms.add(t)
+            filtered = mem.filter_cooldown_terms(new_terms, hours=24)
+            if filtered:
+                print(f"    >>> EVOLVING: Adding {len(filtered)} terms to Agenda")
+                mem.add_to_agenda(filtered, source='EVOLUTION')
         
         mem.update_job(job['url'], score, reason, resume)
         job_queue.task_done()
