@@ -12,6 +12,7 @@ class Brain:
         print("[BRAIN] Loading Full Resume Database into Memory...")
         self.full_resumes = self._load_full_resumes()
         self.lock = threading.Lock()
+        self.feedback_file = "data/tactical_feedback.txt"
 
     def _load_full_resumes(self):
         resumes = {}
@@ -26,6 +27,15 @@ class Brain:
             except: pass
         print(f"[BRAIN] Armed with {len(resumes)} full-text tactical loadouts.")
         return resumes
+
+    def _load_dynamic_rules(self):
+        if not os.path.exists(self.feedback_file):
+            return "No dynamic rules set."
+        try:
+            with open(self.feedback_file, "r") as f:
+                return f.read().strip()
+        except:
+            return "Error loading rules."
 
     def generate_initial_strategy(self):
         # Slightly more aggressive generation
@@ -69,13 +79,19 @@ class Brain:
                 print(f"[BRAIN] 🚫 Hard Reject: '{term}' found in {job.get('company')}")
                 return {"score": 0, "reason": f"Heuristic Reject: Blacklisted term '{term}' detected."}
 
-        # 2. LLM EVALUATION WITH PREFERENCES
+        # 2. LOAD DYNAMIC RULES
+        dynamic_rules = self._load_dynamic_rules()
+
+        # 3. LLM EVALUATION WITH PREFERENCES & DYNAMIC RULES
         prompt = f"""
         Role: Career Strategist.
         Task: Score job 1-10 for a versatile Software/Hardware Engineer.
         
-        USER PREFERENCES:
+        BASE PREFERENCES:
         {USER_PREFERENCES}
+
+        DYNAMIC CONSTRAINTS (HIGHEST PRIORITY):
+        {dynamic_rules}
         
         SCORING RUBRIC:
         - 0: BLACKLIST/REJECT (Matches Negative Constraints).

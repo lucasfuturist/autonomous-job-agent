@@ -1,0 +1,1 @@
+- Exclude Construction, Civil Engineering, and Heavy Machinery roles.
