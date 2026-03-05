@@ -6,6 +6,8 @@ import os
 import traceback
 import threading
 import glob
+import subprocess
+import tempfile
 from config import PORT, MD_FOLDER
 
 # --- ROBUST IMPORT LOGIC ---
@@ -90,26 +92,20 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json(logs)
 
     def _handle_get_resume(self):
-        # Parse query param for name
         if "?" not in self.path or "name=" not in self.path:
             self.send_error(400, "Missing name parameter")
             return
             
         query = self.path.split("?")[1]
         name_param = [p.split("=")[1] for p in query.split("&") if p.startswith("name=")][0]
-        # Security: basic sanitization to prevent directory traversal
         clean_name = os.path.basename(name_param) 
         
-        # Look for the file in MD_FOLDER
         target_path = os.path.join(MD_FOLDER, f"{clean_name}.md")
         
-        # Fallback: Sometimes extension isn't passed, or file might be in subfolder (though flat structure preferred)
-        # We will try exact match first
         content = ""
         if os.path.exists(target_path):
             with open(target_path, "r", encoding="utf-8") as f: content = f.read()
         else:
-            # Search recursively if not found (matching logic in Brain)
             search_pattern = os.path.join(MD_FOLDER, "**", f"{clean_name}.md")
             matches = glob.glob(search_pattern, recursive=True)
             if matches:
@@ -158,6 +154,30 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                     self._send_json({"success": True})
                 else:
                     self.send_error(400)
+                    
+            elif self.path == '/api/run_script':
+                data = json.loads(post_data)
+                script_content = data.get('script', '')
+                if script_content:
+                    # Append command to open explorer and highlight the target file
+                    script_content += "\nexplorer.exe /select,$dest"
+                    
+                    # Create a temporary ps1 file
+                    fd, path = tempfile.mkstemp(suffix=".ps1")
+                    with os.fdopen(fd, 'w') as f:
+                        f.write(script_content)
+                    
+                    try:
+                        print("[SERVER] Executing Deployment Script...")
+                        subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", path], check=True)
+                        os.remove(path)
+                        self._send_json({"success": True})
+                    except Exception as e:
+                        print(f"[SERVER] Error running script: {e}")
+                        self.send_error(500, str(e))
+                else:
+                    self.send_error(400)
+                    
             else:
                 self.send_error(404)
         except Exception as e:

@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User } from 'lucide-react';
+import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar }) {
-  const [copied, setCopied] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
   const [resumeContent, setResumeContent] = useState("Loading resume...");
+  
+  // Script Execution State
+  const [deploying, setDeploying] = useState(false);
+  const [deployed, setDeployed] = useState(false);
   
   // Resizable Panes State (Percentages)
   const containerRef = useRef(null);
@@ -35,34 +39,46 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar })
   const reasonText = parts[0].trim();
   const scriptContent = parts.length > 1 ? parts[1].trim() : null;
 
-  // Enforce Max 1 Blank Line (2 consecutive line breaks) for Job Description
+  // Enforce Max 1 Blank Line
   const formatText = (text) => {
     if (!text) return { __html: "" };
     let str = text;
-    // 1. Collapse 3+ HTML breaks into exactly 2
     str = str.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br/><br/>');
-    // 2. Collapse 3+ literal newlines into exactly 2
     str = str.replace(/(?:\r?\n\s*){3,}/g, '\n\n');
-    // 3. Apply markdown bolding
     str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     
-    // 4. If the text is raw string (no block HTML), convert standard newlines to BRs for web render
     if (!str.includes('<p>') && !str.includes('<li>')) {
         str = str.replace(/\n/g, '<br/>');
     }
     return { __html: str };
   };
 
-  // Enforce Max 1 Blank Line for Resume/Markdown
   const formatResume = (text) => {
     if (!text) return "";
     return text.replace(/(?:\r?\n\s*){3,}/g, '\n\n');
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(scriptContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(job.url);
+    setUrlCopied(true);
+    setTimeout(() => setUrlCopied(false), 2000);
+  };
+
+  const handleDeploy = async () => {
+    setDeploying(true);
+    try {
+        await fetch('/api/run_script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script: scriptContent })
+        });
+        setDeployed(true);
+        setTimeout(() => setDeployed(false), 3000);
+    } catch (e) {
+        console.error("Failed to execute script", e);
+    } finally {
+        setDeploying(false);
+    }
   };
 
   // --- RESIZE LOGIC ---
@@ -72,18 +88,16 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar })
     if (!container) return;
 
     const bounds = container.getBoundingClientRect();
-    document.body.style.userSelect = 'none'; // Prevent text selection while dragging
+    document.body.style.userSelect = 'none'; 
     document.body.style.cursor = 'col-resize';
 
     const handleDrag = (mouseMoveEvent) => {
         const percent = ((mouseMoveEvent.clientX - bounds.left) / bounds.width) * 100;
         
         if (splitterIndex === 1) {
-            // Adjust Left Pane. Min 15%, Max leaves at least 15% for center + 15% for right
             const newLeft = Math.min(Math.max(percent, 15), 100 - centerWidth - 15);
             setLeftWidth(newLeft);
         } else if (splitterIndex === 2) {
-            // Adjust Center Pane. Percent here represents (Left + Center) position.
             const newCenter = Math.min(Math.max(percent - leftWidth, 15), 100 - leftWidth - 15);
             setCenterWidth(newCenter);
         }
@@ -199,29 +213,50 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar })
                 </div>
 
                 {scriptContent && (
-                    <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 10px', background: '#151515', borderBottom: '1px solid #333' }}>
-                            <span style={{ fontSize: '10px', color: '#666', fontWeight: 'bold' }}>POWERSHELL LOADOUT</span>
-                            <button onClick={handleCopy} style={{ background: 'transparent', border: 'none', color: copied ? 'var(--accent)' : '#666', cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                {copied ? "COPIED" : "COPY"} <Copy size={10} />
-                            </button>
+                    <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontSize: '11px', color: '#888', lineHeight: '1.4' }}>
+                            <strong style={{ color: '#fff' }}>ASSET READY:</strong> Clicking execute will generate the tailored PDF and open Windows Explorer to the target folder.
                         </div>
-                        <textarea 
-                            readOnly 
-                            value={scriptContent} 
-                            style={{ width: '100%', height: '100px', background: 'transparent', border: 'none', color: '#666', padding: '10px', fontFamily: 'monospace', fontSize: '11px', resize: 'none', boxSizing: 'border-box' }} 
-                        />
+                        <button 
+                            onClick={handleDeploy} 
+                            disabled={deploying}
+                            style={{ 
+                                background: deployed ? 'var(--accent)' : '#111', 
+                                color: deployed ? '#000' : 'var(--accent)', 
+                                border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, 
+                                padding: '10px', 
+                                borderRadius: '4px', 
+                                cursor: deploying ? 'wait' : 'pointer', 
+                                fontWeight: 'bold', 
+                                display: 'flex', 
+                                justifyContent: 'center', 
+                                alignItems: 'center', 
+                                gap: '8px',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            {deploying ? "DEPLOYING..." : deployed ? "DEPLOYED!" : "EXECUTE DEPLOYMENT"}
+                            {!deploying && !deployed && <FileDown size={14} />}
+                            {deployed && <Check size={14} />}
+                        </button>
                     </div>
                 )}
             </div>
              {/* FOOTER ACTIONS (Inside Center Pane for focus) */}
             <div style={{ padding: '15px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <a href={job.url} target="_blank" style={{ textDecoration: 'none', textAlign: 'center', color: '#fff', border: '1px solid #444', padding: '8px', borderRadius: '4px', fontSize: '12px', background: '#111', display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                    OPEN ORIGINAL SOURCE <ExternalLink size={14} />
-                </a>
+                
+                {/* URL ACTIONS */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <a href={job.url} target="_blank" style={{ flexGrow: 1, textDecoration: 'none', textAlign: 'center', color: '#fff', border: '1px solid #444', padding: '8px', borderRadius: '4px', fontSize: '12px', background: '#111', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+                        OPEN ORIGINAL SOURCE <ExternalLink size={14} />
+                    </a>
+                    <button onClick={handleCopyUrl} style={{ background: urlCopied ? 'var(--accent)' : '#111', border: '1px solid #444', color: urlCopied ? '#000' : '#aaa', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                        {urlCopied ? "COPIED!" : "COPY URL"} {urlCopied ? <Check size={14} /> : <Link size={14} />}
+                    </button>
+                </div>
 
                  {job.status === 'TARGET' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
                         <button onClick={() => { onUpdateStatus(job.id, 'REJECTED'); onClose(); }} style={{ background: '#220000', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>REJECT</button>
                         <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} style={{ background: 'var(--applied)', border: 'none', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                             MARK APPLIED <Check size={14} />
@@ -229,13 +264,13 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar })
                     </div>
                 )}
                  {job.status === 'APPLIED' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
                         <button onClick={() => onUpdateStatus(job.id, 'TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>UNDO</button>
                         <button onClick={() => onUpdateStatus(job.id, 'INTERVIEW')} style={{ background: 'var(--interview)', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>MARK INTERVIEW</button>
                     </div>
                 )}
                 {job.status === 'REJECTED' && (
-                    <button onClick={() => onUpdateStatus(job.id, 'TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <button onClick={() => onUpdateStatus(job.id, 'TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '5px' }}>
                         RESTORE TO TARGET <RotateCcw size={14} />
                     </button>
                 )}
