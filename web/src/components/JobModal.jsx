@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
@@ -87,13 +87,25 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     if (!job.selected_resume) return;
     setDeploying(true);
     try {
-        await fetch('/api/deploy', {
+        const res = await fetch('/api/deploy', {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resume: job.selected_resume })
+            // Pass the target role so the PDF generator can update the header
+            body: JSON.stringify({ 
+                resume: job.selected_resume,
+                target_role: job.title 
+            })
         });
-        setDeployed(true);
-        setTimeout(() => setDeployed(false), 3000);
+        const data = await res.json();
+        
+        if (data.success && data.url) {
+            setDeployed(true);
+            window.open(data.url, '_blank');
+        } else {
+            console.error("Deploy failed:", data.error);
+        }
+        
+        setTimeout(() => setDeployed(false), 5000);
     } catch (e) { 
         console.error("Deploy failed:", e); 
     } finally { 
@@ -231,9 +243,9 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                             onClick={handleDeploy} disabled={deploying || !job.selected_resume || job.selected_resume === 'Default'}
                             style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || job.selected_resume === 'Default') ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: (job.selected_resume === 'Default') ? 0.5 : 1 }}
                         >
-                            {deploying ? "STAGING..." : deployed ? "ASSET STAGED!" : "STAGE FOR APPLICATION"}
+                            {deploying ? "CONVERTING..." : deployed ? "OPENING PDF..." : "DEPLOY PDF"}
                             {!deploying && !deployed && <FileDown size={14} />}
-                            {deployed && <Check size={14} />}
+                            {deployed && <FileCheck size={14} />}
                         </button>
                     </div>
                 </div>

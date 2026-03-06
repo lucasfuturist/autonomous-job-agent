@@ -83,7 +83,6 @@ class Memory:
         if not loc_str: return None
         loc_clean = loc_str.lower().strip()
         
-        # Fast-track remote
         if 'remote' in loc_clean or 'anywhere' in loc_clean:
             return -1.0 
 
@@ -94,10 +93,9 @@ class Memory:
             conn.close()
             return res[0]
 
-        # Cache Miss: Fetch from Nominatim (OpenStreetMap)
         dist = None
         try:
-            time.sleep(1.1) # CRITICAL: Nominatim enforces strict 1 req/sec limit
+            time.sleep(1.1) 
             url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(loc_str)}&format=json&limit=1"
             req = urllib.request.Request(url, headers={'User-Agent': 'CNS_Tactical_Agent/1.0'})
             with urllib.request.urlopen(req, timeout=5) as response:
@@ -109,7 +107,6 @@ class Memory:
         except Exception as e:
             print(f"[NAV] Geocoding failed for '{loc_str}': {e}")
         
-        # Cache the result (even if None, to prevent spamming failed queries)
         conn.execute("INSERT OR REPLACE INTO loc_cache (loc, distance) VALUES (?, ?)", (loc_clean, dist))
         conn.commit()
         conn.close()
@@ -157,7 +154,6 @@ class Memory:
     def save_job(self, job):
         if self.job_exists(job['url'], job['company'], job['title']): return False
         
-        # Calculate distance Just-In-Time
         distance = self.get_or_fetch_distance(job.get('location', ''))
 
         conn = self._get_conn()
@@ -194,6 +190,22 @@ class Memory:
         conn.close()
         self.export_dashboard()
 
+    def bulk_reject(self, purge_list):
+        """
+        Executes a high-speed bulk update for rejected jobs.
+        purge_list: list of tuples -> [(reason, id), (reason, id), ...]
+        """
+        if not purge_list: return
+        conn = self._get_conn()
+        try:
+            conn.executemany("UPDATE jobs SET score=0, status='REJECTED', reason=? WHERE id=?", purge_list)
+            conn.commit()
+        finally:
+            conn.close()
+        
+        # Update the UI feed only once after all writes are done
+        self.export_dashboard()
+
     # --- AGENDA & HISTORY ---
     def add_to_agenda(self, terms, source='SYSTEM'):
         if not terms: return
@@ -217,7 +229,6 @@ class Memory:
     def peek_next_agenda_item(self):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
-        # PRIORITIZE USER > RECOVERY > SYSTEM
         query = """
             SELECT term, source FROM agenda 
             WHERE status='PENDING' 
@@ -237,7 +248,6 @@ class Memory:
     def get_next_agenda_item(self):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
-        # PRIORITIZE USER > RECOVERY > SYSTEM
         query = """
             SELECT term, source FROM agenda 
             WHERE status='PENDING' 
