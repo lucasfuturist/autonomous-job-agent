@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
@@ -7,6 +7,8 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   
   const [deploying, setDeploying] = useState(false);
   const [deployed, setDeployed] = useState(false);
+  
+  const [regenerating, setRegenerating] = useState(false);
   
   // EDIT MODE STATE
   const [isEditing, setIsEditing] = useState(false);
@@ -59,6 +61,30 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
             .catch(err => setResumeContent("Failed to load resume."));
     }
   }, [job]);
+
+  // --- REGENERATE SUMMARY HANDLER ---
+  const handleRegenerateSummary = async () => {
+      if (regenerating) return;
+      setRegenerating(true);
+      try {
+          const res = await fetch('/api/regenerate_summary', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: job.selected_resume })
+          });
+          if (res.ok) {
+              const data = await res.json();
+              setResumeContent(data.content);
+          } else {
+              alert("Failed to regenerate summary.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Error regenerating summary.");
+      } finally {
+          setRegenerating(false);
+      }
+  };
 
   // --- EDIT HANDLERS ---
   const handleStartEdit = () => {
@@ -338,9 +364,14 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 </div>
                 {/* EDIT CONTROLS */}
                 {!isEditing ? (
-                    <button onClick={handleStartEdit} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', padding: '4px' }} title="Edit Resume">
-                        <Edit size={16} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={handleRegenerateSummary} disabled={regenerating} style={{ background: 'transparent', border: 'none', color: regenerating ? 'var(--accent)' : '#aaa', cursor: 'pointer', padding: '4px' }} title="Regenerate Summary">
+                            <RefreshCw size={16} className={regenerating ? "live-dot" : ""} />
+                        </button>
+                        <button onClick={handleStartEdit} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', padding: '4px' }} title="Edit Resume">
+                            <Edit size={16} />
+                        </button>
+                    </div>
                 ) : (
                     <div style={{ display: 'flex', gap: '10px' }}>
                         <button onClick={handleSaveEdit} style={{ background: 'var(--accent)', border: 'none', color: '#000', borderRadius: '3px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>

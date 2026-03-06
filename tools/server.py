@@ -8,7 +8,8 @@ import threading
 import glob
 import shutil
 import re
-from config import PORT, MD_FOLDER
+import ollama # Required for regeneration
+from config import PORT, MD_FOLDER, HEAVY_MODEL
 
 # --- OPTIONAL PDF DEPENDENCIES ---
 try:
@@ -235,6 +236,63 @@ def convert_to_pdf(md_path, output_path, target_role_arg=None):
         traceback.print_exc()
         return False
 
+# --- REGENERATION LOGIC (Borrowed from Rebuild Script) ---
+def perform_summary_regen(filename):
+    filepath = os.path.join(MD_FOLDER, filename)
+    if not os.path.exists(filepath): return None
+    
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    fm_match = re.search(r'---\ntarget_title: "(.*?)"\ncore_competency: "(.*?)"\n---', content, re.DOTALL)
+    if not fm_match: return None
+    
+    target_title = fm_match.group(1)
+    company = filename.split('_')[0]
+    
+    summary_match = re.search(r'## Professional Summary\n(.*?)\n\n## Relevant Experience', content, re.DOTALL)
+    if not summary_match: return None
+    
+    current_summary = summary_match.group(1).strip()
+    
+    prompt = f"""
+    Role: Ruthless, Strictly Factual Technical Resume Writer.
+    Target Job Title: {target_title}
+    Target Company: {company}
+    
+    Current Summary: 
+    "{current_summary}"
+
+    TASK: Rewrite the summary above to improve flow and impact.
+    
+    RULES:
+    1. NARRATIVE PROSE: Write in flowing, professional resume prose using implied first-person. 
+    2. GOOD: "Systems Engineer with a proven track record of architecting real-time systems..."
+    3. FACT-BASED ALIGNMENT: Keep the facts the same. Just fix the sentence structure.
+    4. NO HALLUCINATION: Do not invent new facts.
+
+    Output ONLY valid JSON: {{ "summary": "..." }}
+    """
+    
+    try:
+        res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
+        data = json.loads(res['message']['content'])
+        new_summary = data.get('summary', current_summary)
+        
+        new_content = content.replace(current_summary, new_summary)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+            
+        # Rebuild PDF
+        pdf_path = filepath.replace('.md', '.pdf').replace('output_mds', 'deployments')
+        convert_to_pdf(filepath, pdf_path)
+        
+        return new_content
+    except Exception as e:
+        print(f"[SERVER] Regen Failed: {e}")
+        return None
+
 class CRMHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -420,7 +478,6 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                     if os.path.exists(src_path):
                         shutil.copy2(src_path, dest_md)
                         
-                        # USE NEW STANDALONE FUNCTION
                         pdf_success = convert_to_pdf(src_path, dest_pdf, target_role)
                         
                         pdf_url = f"/{DEPLOY_FOLDER}/{clean_name.replace('.md', '.pdf')}"
@@ -441,6 +498,18 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             elif self.path == '/api/save_resume':
                 data = json.loads(post_data)
                 self._handle_save_resume(data)
+                
+            elif self.path == '/api/regenerate_summary':
+                data = json.loads(post_data)
+                name = data.get('name')
+                if name:
+                    new_content = perform_summary_regen(name)
+                    if new_content:
+                        self._send_json({"success": True, "content": new_content})
+                    else:
+                        self.send_error(500, "Regeneration failed")
+                else:
+                    self.send_error(400, "Missing name")
                     
             else:
                 self.send_error(404)

@@ -53,7 +53,51 @@ INITIAL_SEARCH_TERMS = [
     "Industrial Automation Engineer", "Controls Systems Engineer", "Hardware Validation Engineer",
     "Test and Measurement Engineer", "Prototype Engineer", "Solid State Sensor Engineer",
     "Physical Data Engineer", "Electro-Mechanical Engineer", "Hardware Test Engineer", "Sensor Systems Engineer",
-    "System Test Engineer", "Applied Hardware Engineer", "Technical Systems Analyst", "Product Systems Engineer"
+    "System Test Engineer", "Applied Hardware Engineer", "Technical Systems Analyst", "Product Systems Engineer",
+
+    # --- EXPANSION 1: CLOUD, BACKEND, SAAS & EMBEDDED ---
+    "Cloud Systems Engineer", "Backend Developer", "Full Stack Developer", "SaaS Platform Engineer", "Application Architect",
+    "AI Research Engineer", "Machine Learning Scientist", "Data Infrastructure Engineer", "Cloud Solutions Architect",
+    "Software Development Engineer", "API Integration Engineer", "Application Engineer", "Enterprise Architect",
+    "Machine Learning Developer", "SaaS Architect", "Platform Services Engineer", "Analytics Systems Engineer",
+    "Web Systems Engineer", "Full Stack Architect", "Cloud AI Engineer", "Distributed Systems Architect",
+    "AI Software Engineer", "Software Validation Engineer", "Algorithm Engineer", "Technical Lead Engineer",
+    "Backend Systems Developer", "Cloud Operations Engineer", "Core Services Engineer", "AI Product Engineer",
+    "Data Architecture Engineer", "Platform Automation Engineer", "Search Systems Engineer", "Cloud Security Engineer",
+    "Software QA Engineer", "Firmware Developer", "IoT Systems Engineer", "Autonomous Navigation Engineer",
+    "Robotics Prototyping Engineer", "Embedded Linux Engineer", "Embedded Software Developer", "Motion Control Engineer",
+    "Hardware Automation Engineer", "Connected Systems Engineer", "Mechatronics Architect", "Autonomous Driving Engineer",
+    "Lidar Systems Engineer", "Calibration Engineer", "Robotic Process Engineer", "Fleet Autonomy Engineer",
+    "UAV Systems Engineer", "Hardware Architecture Engineer", "Edge Devices Engineer", "Robotic Navigation Engineer",
+    "Drone Systems Engineer", "Microcontroller Engineer", "Embedded Controls Engineer", "Automation Controls Engineer",
+    "Machine Vision Engineer", "Teleoperation Systems Engineer", "Avionics Software Engineer", "Real Time Engineer",
+    "Simulation Systems Engineer", "Field Automation Engineer", "Systems Architecture Engineer", "Hardware Bringup Engineer",
+    "Autonomy Software Engineer", "Robotics Test Engineer", "Semiconductor Process Engineer", "Device Research Engineer",
+    "Physical Sciences Engineer", "Fabrication Engineer", "Inorganic Materials Engineer", "Applied Physicist",
+    "Electrochemical Scientist", "Battery Systems Engineer", "Hardware Reliability Engineer", "Microfabrication Engineer",
+    "Thermal Systems Engineer", "Substrate Process Engineer", "Cleanroom Process Engineer", "Coating Process Engineer",
+    "Ceramics Researcher", "Sintering Engineer", "Applied Mechanics Engineer", "R&D Hardware Engineer",
+    "Hardware R&D Scientist", "Physics Simulation Engineer", "Deposition Process Engineer", "Etch Process Engineer",
+    "Structural Test Engineer", "Product Design Engineer", "Quality Systems Engineer", "Chemical Sensor Engineer",
+    "Electromechanical Scientist", "Nanotechnology Engineer", "Formulation Scientist", "Surface Engineer",
+    "Reliability Test Engineer", "Destructive Testing Engineer", "Component Engineer",
+
+    # --- EXPANSION 2: COMPUTATIONAL MATERIALS, SIMULATION & ADVANCED MANUFACTURING ---
+    "Materials Informatics Engineer", "Computational Materials Scientist", "Materials Data Scientist", "Simulation Engineer",
+    "Computational Physicist", "Predictive Modeling Engineer", "Statistical Modeling Engineer", "Multiphysics Simulation Engineer",
+    "Computational Modeling Engineer", "Algorithm Development Engineer", "Materials Modeler", "Imaging Scientist",
+    "Image Processing Engineer", "Sensor Data Scientist", "Automated Metrology Engineer", "Ceramic Process Engineer",
+    "Thermodynamics Engineer", "Powder Processing Engineer", "Extrusion Process Engineer", "Additive Manufacturing Engineer",
+    "Porous Materials Scientist", "Inorganic Materials Scientist", "Slurry Process Engineer", "Refractory Engineer",
+    "Analytical Scientist", "Surface Characterization Scientist", "Defect Analysis Engineer", "Materials Reliability Engineer",
+    "Microstructural Engineer", "Characterization Scientist", "Physical Property Analyst", "Reliability Systems Engineer",
+    "PVD Process Engineer", "Thin Film Scientist", "Vacuum Systems Engineer", "MEMS Process Engineer",
+    "Battery Materials Engineer", "Fuel Cell Engineer", "Sensor Materials Engineer", "Electrochemistry Engineer",
+    "Coating Development Engineer", "Deposition Engineer", "Plasma Process Engineer", "Materials Integration Engineer",
+    "Hardware Materials Engineer", "Advanced Manufacturing Engineer", "Process Characterization Engineer", "Applied Materials Scientist",
+    "R&D Simulation Engineer", "Applied Physics Engineer", "Finite Element Analyst", "Mathematical Modeling Engineer",
+    "Scientific Computing Engineer", "Computational Research Scientist", "Materials Research Engineer", "Structural Analysis Engineer",
+    "Sensor Fabrication Engineer", "Hardware Simulation Engineer", "Aerospace Materials Engineer", "FEA Simulation Engineer"
 ]
 
 LOCATIONS = ["Boston, MA", "Massachusetts", "Remote"]
@@ -94,7 +138,7 @@ NEGATIVE CONSTRAINTS (Reject or Score Low):
 
 # --- PERFORMANCE & GEOFENCING ---
 MIN_SCORE = 7            
-SWEEP_DEPTH = 100        
+SWEEP_DEPTH = 30        
 NUM_ANALYSTS = 3         
 MAX_QUEUE_DEPTH = 50     
 
