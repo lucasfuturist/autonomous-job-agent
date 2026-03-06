@@ -87,6 +87,8 @@ RESUME_CSS = """
         margin-top: 4px;
     }
     
+    a { text-decoration: none; color: #000; }
+
     /* --- SECTIONS --- */
     h2 { 
         font-family: 'Calibri', 'Carlito', 'Helvetica', 'Arial', sans-serif; 
@@ -133,8 +135,105 @@ RESUME_CSS = """
 </style>
 """
 
-CONTACT_INFO = "Boston, MA | (904) 304-2890 | lucas@lucasmougeot.ai | lucasmougeot.ai"
+CONTACT_INFO = """Boston, MA | (904) 304-2890 | <a href="mailto:lucas@lucasmougeot.ai">lucas@lucasmougeot.ai</a> | <a href="https://www.lucasmougeot.ai">lucasmougeot.ai</a>"""
 DEFAULT_COMPETENCY = "AI Platform & Deterministic LLM Infrastructure"
+
+# --- STANDALONE PDF CONVERTER ---
+def convert_to_pdf(md_path, output_path, target_role_arg=None):
+    if not PDF_ENABLED:
+        return False
+        
+    try:
+        with open(md_path, 'r', encoding='utf-8') as f:
+            md_text = f.read()
+        
+        # --- 1. PARSE FRONTMATTER ---
+        fm_title = None
+        fm_competency = None
+        
+        if md_text.startswith('---'):
+            try:
+                parts = md_text.split('---', 2)
+                if len(parts) >= 3:
+                    frontmatter = parts[1]
+                    md_text = parts[2] # Strip frontmatter from body
+                    
+                    title_match = re.search(r'target_title:\s*"(.*?)"', frontmatter)
+                    if title_match: fm_title = title_match.group(1)
+                    
+                    comp_match = re.search(r'core_competency:\s*"(.*?)"', frontmatter)
+                    if comp_match: fm_competency = comp_match.group(1)
+            except Exception as e:
+                print(f"[SERVER] Frontmatter Parse Error: {e}")
+
+        # --- 2. HEADER CONSTRUCTION STRATEGY ---
+        final_title = fm_title if fm_title else (target_role_arg if target_role_arg else "Software Engineer")
+        final_competency = fm_competency if fm_competency else DEFAULT_COMPETENCY
+        
+        header_title = f"{final_title} | {final_competency}"
+
+        # --- 3. STANDARD CONVERSION ---
+        name = "LUCAS MOUGEOT" 
+        lines = md_text.split('\n')
+        if lines[0].strip().startswith('# '):
+            md_text = '\n'.join(lines[1:]) 
+        
+        html_body = markdown2.markdown(md_text)
+        
+        def header_replacer(match):
+            full_text = match.group(1)
+            date_match = re.search(r'\(([^)]+)\)$', full_text)
+            
+            if date_match:
+                date_text = date_match.group(1)
+                title_text = full_text[:date_match.start()].strip()
+                return f"""
+                <div class="keep-together">
+                    <table class="entry-table">
+                        <tr>
+                            <td class="left-cell">{title_text}</td>
+                            <td class="right-cell">{date_text}</td>
+                        </tr>
+                    </table>
+                """ 
+            else:
+                return f'<div class="entry-header"><strong>{full_text}</strong></div>'
+
+        html_body = re.sub(r'<h3>(.*?)</h3>', header_replacer, html_body)
+
+        full_html = f"""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            {RESUME_CSS}
+        </head>
+        <body>
+            <div class="header-block">
+                <div class="name-text">{name}</div>
+                <div class="target-title-box">{header_title}</div>
+                <div class="contact-text">{CONTACT_INFO}</div>
+            </div>
+            {html_body}
+        </body>
+        </html>
+        """
+        
+        html_path = output_path.replace('.pdf', '.html')
+        with open(html_path, "w", encoding='utf-8') as f:
+            f.write(full_html)
+
+        with open(output_path, "wb") as pdf_file:
+            pisa_status = pisa.CreatePDF(full_html, dest=pdf_file)
+            
+        if pisa_status.err:
+            print(f"[SERVER] PDF Generation Error: {pisa_status.err}")
+            return False
+            
+        return True
+    except Exception as e:
+        print(f"[SERVER] PDF Conversion Exception: {e}")
+        traceback.print_exc()
+        return False
 
 class CRMHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -231,109 +330,6 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
-    def _convert_to_pdf(self, md_path, output_path, target_role_arg=None):
-        if not PDF_ENABLED:
-            return False
-            
-        try:
-            with open(md_path, 'r', encoding='utf-8') as f:
-                md_text = f.read()
-            
-            # --- 1. PARSE FRONTMATTER ---
-            # Look for YAML-style frontmatter at start of file
-            fm_title = None
-            fm_competency = None
-            
-            if md_text.startswith('---'):
-                try:
-                    parts = md_text.split('---', 2)
-                    if len(parts) >= 3:
-                        frontmatter = parts[1]
-                        md_text = parts[2] # Strip frontmatter from body
-                        
-                        # Simple regex parsing to avoid yaml dependency
-                        title_match = re.search(r'target_title:\s*"(.*?)"', frontmatter)
-                        if title_match: fm_title = title_match.group(1)
-                        
-                        comp_match = re.search(r'core_competency:\s*"(.*?)"', frontmatter)
-                        if comp_match: fm_competency = comp_match.group(1)
-                except Exception as e:
-                    print(f"[SERVER] Frontmatter Parse Error: {e}")
-
-            # --- 2. HEADER CONSTRUCTION STRATEGY ---
-            # Priority 1: AI-Generated Frontmatter
-            # Priority 2: Argument passed from Frontend (JobSpy title)
-            # Priority 3: Default "Software Engineer"
-            
-            final_title = fm_title if fm_title else (target_role_arg if target_role_arg else "Software Engineer")
-            final_competency = fm_competency if fm_competency else DEFAULT_COMPETENCY
-            
-            header_title = f"{final_title} | {final_competency}"
-
-            # --- 3. STANDARD CONVERSION ---
-            name = "LUCAS MOUGEOT" 
-            lines = md_text.split('\n')
-            # Strip markdown title if exists (e.g., # Lucas Mougeot)
-            if lines[0].strip().startswith('# '):
-                md_text = '\n'.join(lines[1:]) 
-            
-            html_body = markdown2.markdown(md_text)
-            
-            def header_replacer(match):
-                full_text = match.group(1)
-                date_match = re.search(r'\(([^)]+)\)$', full_text)
-                
-                if date_match:
-                    date_text = date_match.group(1)
-                    title_text = full_text[:date_match.start()].strip()
-                    return f"""
-                    <div class="keep-together">
-                        <table class="entry-table">
-                            <tr>
-                                <td class="left-cell">{title_text}</td>
-                                <td class="right-cell">{date_text}</td>
-                            </tr>
-                        </table>
-                    """ 
-                else:
-                    return f'<div class="entry-header"><strong>{full_text}</strong></div>'
-
-            html_body = re.sub(r'<h3>(.*?)</h3>', header_replacer, html_body)
-
-            full_html = f"""
-            <html>
-            <head>
-                <meta charset="utf-8">
-                {RESUME_CSS}
-            </head>
-            <body>
-                <div class="header-block">
-                    <div class="name-text">{name}</div>
-                    <div class="target-title-box">{header_title}</div>
-                    <div class="contact-text">{CONTACT_INFO}</div>
-                </div>
-                {html_body}
-            </body>
-            </html>
-            """
-            
-            html_path = output_path.replace('.pdf', '.html')
-            with open(html_path, "w", encoding='utf-8') as f:
-                f.write(full_html)
-
-            with open(output_path, "wb") as pdf_file:
-                pisa_status = pisa.CreatePDF(full_html, dest=pdf_file)
-                
-            if pisa_status.err:
-                print(f"[SERVER] PDF Generation Error: {pisa_status.err}")
-                return False
-                
-            return True
-        except Exception as e:
-            print(f"[SERVER] PDF Conversion Exception: {e}")
-            traceback.print_exc()
-            return False
-
     def do_POST(self):
         try:
             content_length = int(self.headers['Content-Length'])
@@ -378,7 +374,6 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             elif self.path == '/api/deploy':
                 data = json.loads(post_data)
                 resume_name = data.get('resume')
-                # Optional fallback if JIT wasn't used or MD lacks frontmatter
                 target_role = data.get('target_role', None)
 
                 if resume_name:
@@ -397,7 +392,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                     if os.path.exists(src_path):
                         shutil.copy2(src_path, dest_md)
                         
-                        pdf_success = self._convert_to_pdf(src_path, dest_pdf, target_role)
+                        # USE NEW STANDALONE FUNCTION
+                        pdf_success = convert_to_pdf(src_path, dest_pdf, target_role)
                         
                         pdf_url = f"/{DEPLOY_FOLDER}/{clean_name.replace('.md', '.pdf')}"
                         html_url = f"/{DEPLOY_FOLDER}/{clean_name.replace('.md', '.html')}"
