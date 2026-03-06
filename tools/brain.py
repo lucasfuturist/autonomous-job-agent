@@ -63,29 +63,22 @@ class Brain:
                 return [user_input]
 
     def generate_initial_strategy(self):
-        # We completely bypass the LLM hallucination phase.
-        # We load the user's hardcoded 100-item Master List and shuffle it.
-        # This creates the exact "exhaust one search, move to the next" queue behavior requested.
         print("[BRAIN] Loading Curated Master Target List...")
-        
         terms = INITIAL_SEARCH_TERMS.copy()
         random.shuffle(terms)
         return terms
     
     def evaluate(self, job):
-        # 0. PRE-COGNITION GEOFENCE (Save GPU cycles)
         location = job.get('location', '')
         if location:
             mem_instance = self.MemoryClass()
             distance = mem_instance.get_or_fetch_distance(location)
             
             if distance is not None:
-                # -1.0 is Remote
                 if distance != -1.0 and distance > MAX_COMMUTE_MILES:
                     print(f"[BRAIN] 🛑 Geofence Reject: '{job['company']}' is {distance} miles away in {location}.")
                     return {"score": 0, "reason": f"Geofence Reject: {distance} miles away (Max allowed: {MAX_COMMUTE_MILES} mi). Not remote."}
 
-        # 1. SMART HEURISTIC CHECK (Regex token-based)
         title_lower = str(job.get('title', '')).lower()
         company_lower = str(job.get('company', '')).lower()
         
@@ -99,10 +92,8 @@ class Brain:
                 print(f"[BRAIN] 🚫 Hard Reject: Title token '{pattern}' matched {job.get('title')}")
                 return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Role '{pattern}'"}
 
-        # 2. LOAD DYNAMIC RULES
         dynamic_rules = self._load_dynamic_rules()
 
-        # 3. HIGH-SPEED LLM EVALUATION (THE SCOUT)
         prompt = f"""
         Role: Hostile Technical Gatekeeper.
         
@@ -182,6 +173,13 @@ class Brain:
                 
         valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
         
+        # --- FIX: ANTI-GAP GUARANTEE (STEALTH PLATFORM) ---
+        # Ensure at least 3 Stealth Platform bullets are always included to show "Present" employment
+        stealth_ids = [b['id'] for exp in master.get('experience', []) if 'Stealth' in exp.get('company', '') for b in exp.get('standardized_bullets', [])]
+        if not any(sid in valid_approved_ids for sid in stealth_ids) and stealth_ids:
+            print(f"[BRAIN] Anti-Gap Triggered: Injecting Stealth Platform for {company}...")
+            valid_approved_ids.extend(stealth_ids[:3])
+        
         if len(valid_approved_ids) < 10:
             print("[BRAIN] LLM too strict, injecting fallback density...")
             valid_approved_ids = list(set(valid_approved_ids + fallback_ids))
@@ -227,7 +225,6 @@ class Brain:
             except Exception as e:
                 print(f"[BRAIN] Strategy Synthesis Failed: {e}")
 
-        # --- DYNAMIC SKILLS EXTRACTION START ---
         print(f"[BRAIN] Tailoring Core Skills for {company}...")
         prompt_skills = f"""
         Role: Strict Technical Recruiter.
@@ -258,15 +255,12 @@ class Brain:
                     dynamic_skills = parsed_skills
             except Exception as e:
                 print(f"[BRAIN] Dynamic Skills Extraction Failed: {e}")
-        # --- DYNAMIC SKILLS EXTRACTION END ---
 
         clean_company = re.sub(r'[^a-zA-Z0-9]', '', company)
         clean_title = re.sub(r'[^a-zA-Z0-9]', '', job_title)
         
-        # --- FIX: NAMING CONVENTION UPDATE ---
         filename = f"{clean_company}_{clean_title}_Lucas_Mougeot"
         
-        # --- MARKDOWN ASSEMBLY ---
         md_content = f"""---
 target_title: "{strategy['target_title']}"
 core_competency: "{strategy['core_competency']}"
@@ -278,7 +272,6 @@ core_competency: "{strategy['core_competency']}"
 ## Relevant Experience
 """
         
-        # --- EXPERIENCE SORTING ---
         experiences = master.get('experience', [])
         try:
             experiences.sort(key=lambda x: 0 if "Founding Systems Engineer" in x.get('title', '') else 1)
@@ -295,11 +288,22 @@ core_competency: "{strategy['core_competency']}"
                     md_content += f"- {b['text']}\n"
                 md_content += "\n"
         
-        # Assemble the Tailored Skills Markdown
+        CATEGORY_LABELS = {
+            "programming_languages": "Programming Languages",
+            "ai_and_machine_learning": "AI and Machine Learning",
+            "backend_data_and_infrastructure": "Backend Data and Infrastructure",
+            "robotics_edge_and_autonomy": "Robotics Edge and Autonomy",
+            "materials_characterization": "Materials Characterization",
+            "hardware_and_thermal_processing": "Hardware and Thermal Processing",
+            "electrochemistry_and_lab_techniques": "Electrochemistry and Lab Techniques",
+            "engineering_methodologies": "Engineering Methodologies"
+        }
+
         md_content += "## Core Skills\n"
         for category, items in dynamic_skills.items():
             if items and isinstance(items, list): 
-                md_content += f"- **{category.replace('_', ' ').title()}:** {', '.join(items)}\n"
+                display_label = CATEGORY_LABELS.get(category, category.replace('_', ' ').title())
+                md_content += f"- **{display_label}:** {', '.join(items)}\n"
             
         md_content += "\n## Education\n"
         for ed in master.get('education', []):

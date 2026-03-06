@@ -136,9 +136,10 @@ NEGATIVE CONSTRAINTS (Reject or Score Low):
 - DOMAIN: Avoid Civil Engineering, Construction, Banking, or Insurance unless high-frequency trading.
 """
 
-# --- PERFORMANCE & GEOFENCING ---
+# --- PERFORMANCE & DYNAMIC PAGINATION ---
 MIN_SCORE = 7            
-SWEEP_DEPTH = 30        
+SWEEP_BATCH_SIZE = 100        
+MIN_YIELD_THRESHOLD = 0.05   # Hunter will keep paginating until novel job yield drops below 10%
 NUM_ANALYSTS = 3         
 MAX_QUEUE_DEPTH = 50     
 

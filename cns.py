@@ -3,7 +3,7 @@ import queue
 import time
 import random
 
-from config import LOCATIONS, NUM_ANALYSTS, MAX_QUEUE_DEPTH, MIN_SCORE
+from config import LOCATIONS, NUM_ANALYSTS, MAX_QUEUE_DEPTH, MIN_SCORE, SWEEP_BATCH_SIZE, MIN_YIELD_THRESHOLD
 from tools.memory import Memory
 from tools.senses import perform_sweep
 from tools.brain import Brain
@@ -17,17 +17,12 @@ job_queue = queue.Queue()
 def hunter_loop():
     print("[CNS] Booting Hunter (Persistent Mode)...")
     
-    # 1. Crash Recovery
     mem.recover_agenda()
 
-    # 2. Boot Check
     if mem.get_agenda_status() == 0:
         print("[CNS] 📭 Agenda empty. Generating initial data-driven strategy...")
         autonomous_seeds = brain.generate_initial_strategy()
-        if not autonomous_seeds:
-            autonomous_seeds = ["Systems Engineer", "Materials Engineer"]
         
-        # Surface the terms to the console
         print(f"\n[CNS] 🎯 Generated Strategy (Master List):")
         for i, term in enumerate(autonomous_seeds):
             print(f"  {i+1}. {term}")
@@ -40,7 +35,6 @@ def hunter_loop():
     hunting_active = True
     
     while True:
-        # --- COMMAND OVERRIDE CHECK ---
         if mem.check_and_clear_purge_flag():
             print("\n[CNS] 🧹 COMMAND OVERRIDE DETECTED. PURGING ANALYST QUEUE...")
             with job_queue.mutex:
@@ -48,7 +42,6 @@ def hunter_loop():
             print("[CNS] 🧹 Queue cleared. Analysts awaiting new mission targets.\n")
             hunting_active = True
 
-        # 3. Check for Priority Bypass
         next_item = mem.peek_next_agenda_item()
         
         priority_bypass = False
@@ -58,7 +51,6 @@ def hunter_loop():
                 priority_bypass = True
                 print(f"[CNS] ⚡ Priority Override: Bypassing queue check for '{next_item['term']}' ({source})")
 
-        # 4. Backpressure
         current_depth = job_queue.qsize()
         if current_depth >= MAX_QUEUE_DEPTH and not priority_bypass:
             if hunting_active:
@@ -71,12 +63,10 @@ def hunter_loop():
                 print(f"[CNS] 🟢 HUNTING MODE ENGAGED. Backlog cleared ({current_depth}). Resuming sweeps...")
                 hunting_active = True
             
-        # 5. Fetch Agenda
         term = mem.get_next_agenda_item()
         
-        # 6. Replenish
         if not term:
-            gravity_term = mem.get_gravitational_term(cooldown_hours=24)
+            gravity_term = mem.get_gravitational_term(cooldown_hours=0.5)
             if gravity_term:
                 print(f"[CNS] 🪐 Gravity Pull: Re-queueing high-yield term '{gravity_term}' (Cooldown passed)")
                 term = gravity_term
@@ -84,42 +74,65 @@ def hunter_loop():
                 print("[CNS] 🧠 Agenda exhausted. Brainstorming new vector from Master Profile...")
                 new_terms = brain.generate_initial_strategy()
                 
-                # Surface the terms to the console
                 print(f"\n[CNS] 🎯 Brainstorm Complete (Master List):")
                 for i, t in enumerate(new_terms):
                     print(f"  {i+1}. {t}")
                 print("\n")
                 
-                filtered_terms = mem.filter_cooldown_terms(new_terms, hours=24)
+                filtered_terms = mem.filter_cooldown_terms(new_terms, hours=0.5)
                 
                 if filtered_terms:
                     mem.add_to_agenda(filtered_terms)
                     time.sleep(2) 
                     continue
                 else:
-                    print("[CNS] 😴 All viable strategies on cooldown. Sleeping 60s...")
+                    print("[CNS] 😴 All viable strategies on cooldown (30m). Sleeping 60s...")
                     time.sleep(60)
                     continue
 
-        print(f"[CNS] 🔭 Executing Mission: '{term}'")
+        print(f"\n[CNS] 🔭 Executing Mission: '{term}'")
         
-        # 7. Execute Sweep
         loc = random.choice(LOCATIONS)
         is_remote = (loc == "Remote")
         
-        results = perform_sweep(term, "USA" if is_remote else loc, is_remote)
+        # --- DYNAMIC YIELD PAGINATION LOOP ---
+        offset = 0
+        total_results = 0
+        total_new = 0
         
-        new_count = 0
-        for job in results:
-            if mem.save_job(job):
-                job_queue.put(job)
-                new_count += 1
+        while True:
+            results = perform_sweep(term, "USA" if is_remote else loc, is_remote, batch_size=SWEEP_BATCH_SIZE, offset=offset)
+            
+            if not results:
+                break
+                
+            batch_new = 0
+            for job in results:
+                if mem.save_job(job):
+                    job_queue.put(job)
+                    batch_new += 1
+            
+            total_results += len(results)
+            total_new += batch_new
+            
+            yield_rate = batch_new / len(results)
+            print(f"  -> Batch Yield: {batch_new} new / {len(results)} scraped ({yield_rate*100:.1f}%)")
+            
+            # Check Threshold
+            if yield_rate < MIN_YIELD_THRESHOLD:
+                print(f"  -> 🛑 Target area exhausted (Yield < {MIN_YIELD_THRESHOLD*100:.0f}%). Concluding mission.")
+                break
+                
+            # If JobSpy fails to paginate properly and returns exact same jobs, yield=0%, breaking the loop safely.
+            offset += SWEEP_BATCH_SIZE
+            print(f"  -> 🟢 Yield high enough. Paginating deeper (Next Offset: {offset})...")
+            time.sleep(random.randint(5, 8)) # Respectful delay between page fetches
         
-        # 8. Mark Complete
+        # Log final mission totals
         mem.mark_agenda_complete(term)
-        mem.log_mission_results(term, len(results), new_count, 0)
+        mem.log_mission_results(term, total_results, total_new, 0)
         
-        print(f"[CNS] Hunter found {new_count} new targets (of {len(results)} scraped) for '{term}'")
+        print(f"[CNS] Mission Complete: '{term}'. Total: {total_new} new targets isolated.")
         time.sleep(random.randint(15, 30))
 
 def analyst_loop(worker_id):
@@ -149,7 +162,7 @@ def analyst_loop(worker_id):
         
         if score >= 8 and job_queue.qsize() < 10:
             new_terms = brain.strategize(job)
-            filtered = mem.filter_cooldown_terms(new_terms, hours=24)
+            filtered = mem.filter_cooldown_terms(new_terms, hours=0.5)
             if filtered:
                 print(f"    >>> EVOLVING: Adding {len(filtered)} terms to Agenda")
                 mem.add_to_agenda(filtered, source='EVOLUTION')
