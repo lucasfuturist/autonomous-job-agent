@@ -52,8 +52,14 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
         <div style={{ overflow: 'hidden', flexGrow: 1 }}>
-          <div style={{ fontSize: compact ? '13px' : '16px', fontWeight: 'bold', color: '#fff', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{job.company}</div>
-          <div style={{ fontSize: compact ? '10px' : '13px', color: '#888', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{job.title}</div>
+          {/* PRIMARY: JOB TITLE */}
+          <div style={{ fontSize: compact ? '13px' : '16px', fontWeight: 'bold', color: '#fff', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={job.title}>
+            {job.title}
+          </div>
+          {/* SUBTITLE: COMPANY */}
+          <div style={{ fontSize: compact ? '10px' : '13px', color: '#888', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={job.company}>
+            {job.company}
+          </div>
         </div>
         
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
