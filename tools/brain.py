@@ -117,14 +117,16 @@ class Brain:
         
         # 1. The Indestructible Sorter (Filter bullets based on relevance)
         bullet_catalog = {}
-        prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nTask: Select the 5 to 8 most highly relevant bullet IDs from the candidate's experience that prove they can do this specific job.\n\nCandidate Bullets:\n"
+        # EXPANDED PROMPT: Explicitly ask for adjacent context to fill pages
+        prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nTask: Select the top 15 to 20 relevant bullet IDs. INCLUE adjacent technical context (e.g. if software role, include hardware/robotics context to show systems depth). We want a dense, 2-page resume.\n\nCandidate Bullets:\n"
         
         fallback_ids = []
         for exp in master.get('experience', []):
             for i, b in enumerate(exp.get('standardized_bullets', [])):
                 bullet_catalog[b['id']] = b['text']
                 prompt_bullets += f"- {b['id']}: {b['text']}\n"
-                if i < 2: fallback_ids.append(b['id'])
+                # FORCE DENSITY: Save 6 bullets per role as fallback (was 4)
+                if i < 6: fallback_ids.append(b['id'])
                 
         prompt_bullets += "\nOutput EXACTLY this JSON format and nothing else: {\"selected_ids\": [\"exp_ez_1\", \"exp_stealth_2\"]}"
         
@@ -148,11 +150,13 @@ class Brain:
                 
         valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
         
-        if not valid_approved_ids:
-            valid_approved_ids = fallback_ids
+        # If the LLM was too strict (< 10 total bullets), merge with fallback to guarantee density
+        if len(valid_approved_ids) < 10:
+            print("[BRAIN] LLM too strict, injecting fallback density...")
+            valid_approved_ids = list(set(valid_approved_ids + fallback_ids))
 
         # 2. Grounded Executive Summary Synthesis
-        actual_experience_text = "\n".join([f"- {bullet_catalog[i]}" for i in valid_approved_ids[:5]])
+        actual_experience_text = "\n".join([f"- {bullet_catalog[i]}" for i in valid_approved_ids[:8]])
         
         prompt_summary = f"""
         Role: Elite Resume Writer.
@@ -165,7 +169,7 @@ class Brain:
         {actual_experience_text}
 
         Task: Write a punchy, 3-sentence professional summary bridging the candidate's ACTUAL background with this specific role's mission.
-        CRITICAL RULE: DO NOT shape-shift the candidate. DO NOT invent past titles (e.g., do not call them an 'Enterprise Cloud Architect' or 'TikTok Creator' if they are not one). Frame their actual systems/hardware/AI background as the perfect asset for the company's needs.
+        CRITICAL RULE: DO NOT shape-shift the candidate. DO NOT invent past titles.
         
         Output ONLY valid JSON: {{"summary": "..."}}
         """
@@ -197,7 +201,8 @@ class Brain:
         
         for exp in master.get('experience', []):
             role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
-            role_bullets = role_bullets[:4] 
+            # MAX DENSITY: Allow up to 12 bullets per role
+            role_bullets = role_bullets[:12] 
             
             if role_bullets:
                 md_content += f"### {exp['title']} at {exp['company']} ({exp.get('dates', '')})\n"
