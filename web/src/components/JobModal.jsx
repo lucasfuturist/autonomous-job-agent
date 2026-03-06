@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
@@ -15,10 +15,16 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
   const isStarred = job?.starred === 1 || job?.starred === true;
 
-  // --- ACTION HANDLERS WITH QUEUE ADVANCE ---
-  const handleAction = (status) => {
+  // --- ACTION HANDLERS ---
+  // Triage actions advance the queue automatically
+  const handleTriageAction = React.useCallback((status) => {
       if (onNext) onNext(); else onClose(); 
       onUpdateStatus(job.id, status);       
+  }, [job?.id, onNext, onClose, onUpdateStatus]);
+
+  // Corrections (Undo/Restore) stay on the screen
+  const handleCorrection = (status) => {
+      onUpdateStatus(job.id, status);
   };
 
   // --- KEYBOARD SHORTCUTS ---
@@ -33,16 +39,16 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       if (key === 'arrowright' && onNext) onNext();
       if (key === 'arrowleft' && onPrev) onPrev();
       
-      // Triage Hotkeys
-      if (key === 'x') handleAction('REJECTED');
-      if (key === 'a') handleAction('APPLIED');
+      // Triage Hotkeys (Only fire if the job is in a valid state for them)
+      if (key === 'x' && job.status === 'TARGET') handleTriageAction('REJECTED');
+      if (key === 'a' && job.status === 'TARGET') handleTriageAction('APPLIED');
       if (key === 's') onToggleStar(job.id, !isStarred);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [job, onClose, onNext, onPrev, onToggleStar, isStarred]);
+  }, [job, onClose, onNext, onPrev, onToggleStar, isStarred, handleTriageAction]);
 
-  // Fetch Resume
+  // --- FETCH RESUME ---
   useEffect(() => {
     if (job?.selected_resume) {
         setResumeContent("Loading...");
@@ -55,6 +61,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
   if (!job) return null;
 
+  // --- PARSERS & FORMATTERS ---
   const parts = (job.reason || "").split("### DEPLOYMENT SCRIPT:");
   const reasonText = parts[0].trim();
   const scriptContent = parts.length > 1 ? parts[1].trim() : null;
@@ -82,7 +89,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     setTimeout(() => setUrlCopied(false), 2000);
   };
 
-  const handleCopy = () => {
+  const handleCopyScript = () => {
     navigator.clipboard.writeText(scriptContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -101,6 +108,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     finally { setDeploying(false); }
   };
 
+  // --- RESIZE LOGIC ---
   const handleDragStart = (splitterIndex) => (mouseDownEvent) => {
     mouseDownEvent.preventDefault();
     const container = containerRef.current;
@@ -130,12 +138,19 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  // --- STYLING HELPERS ---
   let statusColor = 'var(--accent)';
   if (job.status === 'APPLIED') statusColor = 'var(--applied)';
   if (job.status === 'INTERVIEW') statusColor = 'var(--interview)';
   if (job.status === 'REJECTED') statusColor = 'var(--danger)';
 
   const splitterStyle = { width: '8px', margin: '0 -4px', cursor: 'col-resize', zIndex: 10, background: 'transparent', transition: 'background 0.2s' };
+
+  const renderModalDistance = () => {
+    if (job.distance === undefined || job.distance === null) return null;
+    if (job.distance === -1 || job.distance === -1.0) return <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Navigation size={12}/> Remote</div>;
+    return <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: job.distance <= 30 ? 'var(--accent)' : 'inherit' }}><Navigation size={12}/> {Math.round(job.distance)} mi from Boston</div>;
+  };
 
   return (
     <div style={{
@@ -162,6 +177,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
              <div style={{ height: '30px', width: '1px', background: '#333' }}></div>
              <div style={{ display: 'flex', gap: '15px', fontSize: '12px', color: '#666' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><MapPin size={12}/> {job.location}</div>
+                {renderModalDistance()}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Calendar size={12}/> {new Date(job.found_at).toLocaleDateString()}</div>
              </div>
           </div>
@@ -217,21 +233,37 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 </div>
 
                 {scriptContent && (
-                    <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ fontSize: '11px', color: '#888', lineHeight: '1.4' }}>
-                            <strong style={{ color: '#fff' }}>ASSET READY:</strong> Clicking execute will generate the tailored PDF and open Windows Explorer to the target folder.
+                    <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        
+                        {/* Visible Script & Copy Button */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 15px', background: '#151515', borderBottom: '1px solid #333' }}>
+                            <span style={{ fontSize: '10px', color: '#666', fontWeight: 'bold' }}>POWERSHELL LOADOUT</span>
+                            <button onClick={handleCopyScript} style={{ background: 'transparent', border: 'none', color: copied ? 'var(--accent)' : '#666', cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                {copied ? "COPIED" : "COPY SCRIPT"} <Copy size={10} />
+                            </button>
                         </div>
-                        <button 
-                            onClick={handleDeploy} disabled={deploying}
-                            style={{ background: deployed ? 'var(--accent)' : '#111', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: deploying ? 'wait' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
-                        >
-                            {deploying ? "DEPLOYING..." : deployed ? "DEPLOYED!" : "EXECUTE DEPLOYMENT"}
-                            {!deploying && !deployed && <FileDown size={14} />}
-                            {deployed && <Check size={14} />}
-                        </button>
+                        <textarea 
+                            readOnly 
+                            value={scriptContent} 
+                            style={{ width: '100%', height: '80px', background: 'transparent', border: 'none', color: '#666', padding: '15px', fontFamily: 'monospace', fontSize: '11px', resize: 'none', boxSizing: 'border-box' }} 
+                        />
+                        
+                        {/* 1-Click Execute Button */}
+                        <div style={{ padding: '10px', borderTop: '1px solid #222', background: '#111' }}>
+                            <button 
+                                onClick={handleDeploy} disabled={deploying}
+                                style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: deploying ? 'wait' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                            >
+                                {deploying ? "DEPLOYING..." : deployed ? "DEPLOYED TO EXPLORER!" : "EXECUTE DEPLOYMENT"}
+                                {!deploying && !deployed && <FileDown size={14} />}
+                                {deployed && <Check size={14} />}
+                            </button>
+                        </div>
+
                     </div>
                 )}
             </div>
+            
              {/* FOOTER ACTIONS */}
             <div style={{ padding: '15px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -245,20 +277,26 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
                  {job.status === 'TARGET' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
-                        <button onClick={() => handleAction('REJECTED')} style={{ background: '#220000', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>REJECT (X)</button>
-                        <button onClick={() => handleAction('APPLIED')} style={{ background: 'var(--applied)', border: 'none', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <button onClick={() => handleTriageAction('REJECTED')} style={{ background: '#220000', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>REJECT (X)</button>
+                        <button onClick={() => handleTriageAction('APPLIED')} style={{ background: 'var(--applied)', border: 'none', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                             MARK APPLIED (A) <Check size={14} />
                         </button>
                     </div>
                 )}
                  {job.status === 'APPLIED' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
-                        <button onClick={() => handleAction('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>UNDO (TO TARGET)</button>
-                        <button onClick={() => handleAction('INTERVIEW')} style={{ background: 'var(--interview)', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>MARK INTERVIEW</button>
+                        <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>UNDO (TO TARGET)</button>
+                        <button onClick={() => handleTriageAction('INTERVIEW')} style={{ background: 'var(--interview)', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>MARK INTERVIEW</button>
+                    </div>
+                )}
+                {job.status === 'INTERVIEW' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
+                        <button onClick={() => handleCorrection('APPLIED')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>UNDO (TO APPLIED)</button>
+                        <button onClick={() => handleTriageAction('OFFER')} style={{ background: '#fff', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>MARK OFFER</button>
                     </div>
                 )}
                 {job.status === 'REJECTED' && (
-                    <button onClick={() => handleAction('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '5px' }}>
+                    <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '5px' }}>
                         RESTORE TO TARGET <RotateCcw size={14} />
                     </button>
                 )}

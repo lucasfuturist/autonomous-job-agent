@@ -13,7 +13,7 @@ export default function Feed() {
   const [rules, setRules] = useState("");
   const [rescoreLoading, setRescoreLoading] = useState(false);
 
-  // --- FILTERS ---
+  // Filters
   const [search, setSearch] = useState("");
   const [minScore, setMinScore] = useState(parseFloat(localStorage.getItem('cns_score') || 5));
   const [remoteOnly, setRemoteOnly] = useState(localStorage.getItem('cns_remote') === 'true');
@@ -23,6 +23,7 @@ export default function Feed() {
 
   const lastJobsRaw = useRef("");
   const lastStatusRaw = useRef("");
+  const isTriaging = useRef(false); // NEW: Tracks if Modal is open
 
   useEffect(() => { localStorage.setItem('cns_score', minScore) }, [minScore]);
   useEffect(() => { localStorage.setItem('cns_remote', remoteOnly) }, [remoteOnly]);
@@ -31,13 +32,19 @@ export default function Feed() {
 
   useEffect(() => { setDisplayLimit(100); }, [search, minScore, remoteOnly, stateFilter, resumeFilter, starsOnly]);
 
+  // Lock background updates if Modal is open
+  useEffect(() => {
+      isTriaging.current = !!selectedJob;
+  }, [selectedJob]);
+
   const fetchData = async () => {
     try {
       const [jobsRes, statusRes] = await Promise.all([fetch('/api/jobs'), fetch('/data/status.json')]);
       
       if (jobsRes.ok) {
         const text = await jobsRes.text();
-        if (text !== lastJobsRaw.current) {
+        // ONLY update the grid if data changed AND we are not deep-diving in a modal
+        if (text !== lastJobsRaw.current && !isTriaging.current) {
             lastJobsRaw.current = text;
             setJobs(JSON.parse(text));
         }
@@ -66,18 +73,11 @@ export default function Feed() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (selectedJob) {
-        const updated = jobs.find(j => j.id === selectedJob.id);
-        if (updated && updated !== selectedJob && updated.status === selectedJob.status) {
-            setSelectedJob(updated);
-        }
-    }
-  }, [jobs]);
-
   const handleUpdateStatus = async (id, newStatus) => {
+    // Optimistic UI Update
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: newStatus } : j));
-    lastJobsRaw.current = ""; 
+    
+    // Background DB Sync
     await fetch('/api/update_status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus })
@@ -85,8 +85,10 @@ export default function Feed() {
   };
 
   const handleToggleStar = async (id, starred) => {
+    // Optimistic UI Update
     setJobs(prev => prev.map(j => j.id === id ? { ...j, starred: starred } : j));
-    lastJobsRaw.current = "";
+    
+    // Background DB Sync
     await fetch('/api/star', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, starred })
@@ -144,6 +146,7 @@ export default function Feed() {
 
   const visibleJobs = filteredJobs.slice(0, displayLimit);
 
+  // Queue logic targets the CURRENT state of jobs, allowing smooth shifting
   const handleNext = () => {
       if (!selectedJob) return;
       const idx = visibleJobs.findIndex(j => j.id === selectedJob.id);

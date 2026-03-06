@@ -3,7 +3,7 @@ import queue
 import time
 import random
 
-from config import LOCATIONS, NUM_ANALYSTS, MAX_QUEUE_DEPTH
+from config import LOCATIONS, NUM_ANALYSTS, MAX_QUEUE_DEPTH, MIN_SCORE
 from tools.memory import Memory
 from tools.senses import perform_sweep
 from tools.brain import Brain
@@ -36,7 +36,6 @@ def hunter_loop():
         # 3. Check for Priority Bypass
         next_item = mem.peek_next_agenda_item()
         
-        # Priority if Manual Injection (USER) or Crash Recovery (RECOVERY)
         priority_bypass = False
         if next_item:
             source = next_item.get('source', 'SYSTEM')
@@ -44,7 +43,7 @@ def hunter_loop():
                 priority_bypass = True
                 print(f"[CNS] ⚡ Priority Override: Bypassing queue check for '{next_item['term']}' ({source})")
 
-        # 4. Backpressure (with Bypass)
+        # 4. Backpressure
         current_depth = job_queue.qsize()
         if current_depth >= MAX_QUEUE_DEPTH and not priority_bypass:
             if hunting_active:
@@ -57,10 +56,10 @@ def hunter_loop():
                 print(f"[CNS] 🟢 HUNTING MODE ENGAGED. Backlog cleared ({current_depth}). Resuming sweeps...")
                 hunting_active = True
             
-        # 5. Fetch Agenda (Locks item as PROCESSING)
+        # 5. Fetch Agenda
         term = mem.get_next_agenda_item()
         
-        # 6. If Agenda Dry, Replenish (With Cooldowns)
+        # 6. Replenish
         if not term:
             gravity_term = mem.get_gravitational_term(cooldown_hours=24)
             if gravity_term:
@@ -94,12 +93,11 @@ def hunter_loop():
                 job_queue.put(job)
                 new_count += 1
         
-        # 8. Mark Complete (Delete from Agenda, Log to History)
+        # 8. Mark Complete
         mem.mark_agenda_complete(term)
         mem.log_mission_results(term, len(results), new_count, 0)
         
         print(f"[CNS] Hunter found {new_count} new targets (of {len(results)} scraped) for '{term}'")
-        
         time.sleep(random.randint(15, 30))
 
 def analyst_loop(worker_id):
@@ -119,8 +117,14 @@ def analyst_loop(worker_id):
         
         mem.feedback_mission_quality(job.get('search_term'), score)
 
-        resume, ps_script = brain.pick_resume_and_script(job)
-        reason = f"{reason}\n\n### DEPLOYMENT SCRIPT:\n{ps_script}"
+        # --- JIT FORGE INTEGRATION ---
+        if score >= MIN_SCORE:
+            print(f"[CNS-{worker_id}] JIT Assembling Resume for {job['company']}...")
+            resume, deployment_notes = brain.build_jit_resume(job)
+            if deployment_notes:
+                reason = f"{reason}\n\n### DEPLOYMENT SCRIPT:\n{deployment_notes}"
+        else:
+            resume = "N/A"
         
         if score >= 8 and job_queue.qsize() < 10:
             new_terms = brain.strategize(job)
@@ -143,12 +147,12 @@ if __name__ == "__main__":
     threading.Thread(target=start_server, daemon=True).start()
     threading.Thread(target=status_loop, daemon=True).start()
     
-    if brain.full_resumes:
-        stale_jobs = mem.get_stale_jobs()
-        if stale_jobs:
-            print(f"[CNS] ⚠️  RECOVERY MODE: Found {len(stale_jobs)} stale targets. Re-analyzing...")
-            for j in stale_jobs:
-                job_queue.put(j)
+    # Recover stale queue jobs (we no longer depend on full_resumes length check to boot)
+    stale_jobs = mem.get_stale_jobs()
+    if stale_jobs:
+        print(f"[CNS] ⚠️  RECOVERY MODE: Found {len(stale_jobs)} stale targets. Re-analyzing...")
+        for j in stale_jobs:
+            job_queue.put(j)
     
     threading.Thread(target=hunter_loop, daemon=True).start()
     

@@ -1,7 +1,6 @@
 import ollama
 import json
 import os
-import glob
 import re
 import threading
 import random
@@ -9,24 +8,25 @@ from config import OLLAMA_MODEL, MD_FOLDER, CORE_SCHEMA, BLACKLIST_KEYWORDS, USE
 
 class Brain:
     def __init__(self):
-        print("[BRAIN] Loading Full Resume Database into Memory...")
-        self.full_resumes = self._load_full_resumes()
+        print("[BRAIN] Initializing JIT Resume Forge...")
         self.lock = threading.Lock()
         self.feedback_file = "data/tactical_feedback.txt"
+        self.master_data_path = "data/master_career_data.json"
+        self._ensure_md_folder()
 
-    def _load_full_resumes(self):
-        resumes = {}
-        if not os.path.exists(MD_FOLDER): return resumes
-        search_pattern = os.path.join(MD_FOLDER, "**", "*.md")
-        for md_path in glob.glob(search_pattern, recursive=True):
-            if "_meta" in md_path: continue
-            base_name = os.path.basename(md_path).replace('.md', '')
-            try:
-                with open(md_path, 'r', encoding='utf-8') as f:
-                    resumes[base_name] = f.read()
-            except: pass
-        print(f"[BRAIN] Armed with {len(resumes)} full-text tactical loadouts.")
-        return resumes
+    def _ensure_md_folder(self):
+        if not os.path.exists(MD_FOLDER):
+            os.makedirs(MD_FOLDER)
+
+    def _load_master_data(self):
+        if not os.path.exists(self.master_data_path):
+            return None
+        try:
+            with open(self.master_data_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[BRAIN] Error loading master data: {e}")
+            return None
 
     def _load_dynamic_rules(self):
         if not os.path.exists(self.feedback_file):
@@ -38,21 +38,14 @@ class Brain:
             return "Error loading rules."
 
     def generate_initial_strategy(self):
-        # Slightly more aggressive generation
-        if not self.full_resumes: return []
-
-        resume_names = "\n".join(list(self.full_resumes.keys()))
-        
-        # We sample the universe to prevent token overflow while maintaining variety on boot
-        # Sample 40 terms from the massive list to show the LLM what we mean
         sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 40))
         
         prompt = f"""
         Role: Tactical Headhunter.
-        Candidate Loadouts (Resumes): {resume_names}
+        Candidate Loadouts (Resumes): Dynamic JIT Master Vault (AI, Systems, Robotics)
         Primary Search Universe Sample: {sample_universe}... (and 60+ other niche technical domains)
         
-        TASK: Based on the resumes and the universe, generate 10 highly specific Job Search Queries.
+        TASK: Based on the candidate's broad profile and the universe, generate 10 highly specific Job Search Queries.
         Focus on:
         1. High-yield titles (e.g., 'Founding Systems Engineer', 'Robotics Integrator')
         2. Niche tech (e.g., 'Deterministic RAG', 'Computational Geometry')
@@ -68,7 +61,6 @@ class Brain:
                 clean_terms = [t.replace("Lucas Mougeot", "").strip() for t in terms]
                 return clean_terms
             except: 
-                # Fallback: Pick 5 random high-value terms from the schema if LLM fails
                 return random.sample(CORE_SCHEMA, 5)
     
     def evaluate(self, job):
@@ -112,31 +104,82 @@ class Brain:
             except Exception as e: 
                 return {"score": 0, "reason": f"Brain Fault: {e}"}
 
-    def pick_resume_and_script(self, job):
-        if not self.full_resumes: return "Default", "# No resumes loaded."
+    def build_jit_resume(self, job):
+        master = self._load_master_data()
+        if not master:
+            return "Default", None
 
-        job_title = str(job['title']).lower()
-        job_text = (job_title + " " + str(job['description'])).lower()
-        job_words = set(re.findall(r'\b[a-z0-9]{5,}\b', job_text))
+        job_desc = str(job.get('description', ''))[:3000]
+        job_title = str(job.get('title', ''))
+        company = str(job.get('company', ''))
         
-        scores = {}
-        for name, text in self.full_resumes.items():
-            text_lower = text.lower()
-            name_lower = name.lower()
-            scores[name] = sum(1 for w in job_words if w in text_lower)
-            for title_word in re.findall(r'\b[a-z0-9]{4,}\b', job_title):
-                if title_word in name_lower: scores[name] += 15 
+        # 1. Batch extraction of relevant bullets
+        bullet_catalog = {}
+        prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nCandidate Experience Bullets:\n"
+        
+        for exp in master.get('experience', []):
+            for b in exp.get('standardized_bullets', []):
+                bullet_catalog[b['id']] = b['text']
+                prompt_bullets += f"- ID: {b['id']} | {b['text']}\n"
+                
+        prompt_bullets += "\nSelect the 5 to 7 most highly relevant bullet IDs for this specific job. Output ONLY valid JSON: {\"selected_ids\": [\"id1\", \"id2\"]}"
+        
+        selected_ids = []
+        with self.lock:
+            try:
+                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt_bullets}], format='json')
+                data = json.loads(res['message']['content'])
+                selected_ids = data.get('selected_ids', [])
+            except Exception as e:
+                print(f"[BRAIN] JIT Bullet Extraction Failed: {e}")
+                selected_ids = list(bullet_catalog.keys())[:5]
+                
+        # 2. Executive Summary Synthesis
+        prompt_summary = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nWrite a punchy, 3-sentence professional summary for the candidate bridging their background to this specific role's mission. Output ONLY valid JSON: {{\"summary\": \"...\"}}"
+        
+        summary = "Dedicated Systems Engineer with a proven track record bridging software architecture, AI integration, and robust hardware automation."
+        with self.lock:
+            try:
+                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt_summary}], format='json')
+                data = json.loads(res['message']['content'])
+                summary = data.get('summary', summary)
+            except Exception as e:
+                print(f"[BRAIN] JIT Summary Extraction Failed: {e}")
+
+        # 3. Assemble Markdown Payload
+        clean_company = re.sub(r'[^a-zA-Z0-9]', '', company)
+        clean_title = re.sub(r'[^a-zA-Z0-9]', '', job_title)
+        filename = f"{clean_company}_{clean_title}_JIT"
+        
+        md_content = f"# Lucas Mougeot\n\n## Professional Summary\n{summary}\n\n## Relevant Experience\n\n"
+        
+        for exp in master.get('experience', []):
+            role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in selected_ids]
+            if role_bullets:
+                md_content += f"### {exp['title']} at {exp['company']} ({exp.get('dates', '')})\n"
+                for b in role_bullets:
+                    md_content += f"- {b['text']}\n"
+                md_content += "\n"
+                
+        md_content += "## Core Skills\n"
+        skills = master.get('skills', {})
+        for category, items in skills.items():
+            md_content += f"- **{category.replace('_', ' ').title()}:** {', '.join(items)}\n"
             
-        winner = max(scores, key=scores.get) if scores else list(self.full_resumes.keys())[0]
-
-        clean_company = re.sub(r'[^a-zA-Z0-9]', '', str(job['company']))
-        clean_title = re.sub(r'[^a-zA-Z0-9]', '', str(job['title']))
-        
-        ps_script = f"""$dest = "C:\\projects\\pdf2md\\submitted_pdfs\\Lucas_Mougeot_{clean_company}_{clean_title}.pdf"\nCopy-Item -Path "C:\\projects\\pdf2md\\input_pdfs\\{winner}.pdf" -Destination $dest\n(Get-Item $dest).LastWriteTime = (Get-Date)\nAdd-Content -Path "C:\\projects\\pdf2md\\submitted_pdfs\\submissions.md" -Value "- **{job['company']}** | {job['title']} | Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm') | Resume: {winner}"\n"""
-        return winner, ps_script
+        md_content += "\n## Education\n"
+        for ed in master.get('education', []):
+            md_content += f"- **{ed['degree']}** | {ed['institution']} \n  *{ed['details']}*\n"
+            
+        filepath = os.path.join(MD_FOLDER, f"{filename}.md")
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(md_content)
+        except Exception as e:
+            print(f"[BRAIN] Failed to write JIT resume: {e}")
+            
+        return filename, None
 
     def strategize(self, job):
-        # Sample universe for pivot context
         sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 20))
         
         prompt = f"""

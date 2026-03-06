@@ -13,15 +13,21 @@ export default function Board() {
   const [remoteOnly, setRemoteOnly] = useState(false);
 
   const lastJobsRaw = useRef("");
+  const isTriaging = useRef(false);
 
   useEffect(() => { localStorage.setItem('cns_board_state', stateFilter) }, [stateFilter]);
+
+  // Lock background updates if Modal is open
+  useEffect(() => {
+      isTriaging.current = !!selectedJob;
+  }, [selectedJob]);
 
   const fetchData = async () => {
     try {
       const res = await fetch('/api/jobs');
       if (res.ok) {
           const text = await res.text();
-          if (text !== lastJobsRaw.current) {
+          if (text !== lastJobsRaw.current && !isTriaging.current) {
               lastJobsRaw.current = text;
               setJobs(JSON.parse(text));
           }
@@ -36,18 +42,8 @@ export default function Board() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (selectedJob) {
-        const updated = jobs.find(j => j.id === selectedJob.id);
-        if (updated && updated !== selectedJob && updated.status === selectedJob.status) {
-            setSelectedJob(updated);
-        }
-    }
-  }, [jobs]);
-
   const handleUpdateStatus = async (id, newStatus) => {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: newStatus } : j));
-    lastJobsRaw.current = ""; // Cache bust
     await fetch('/api/update_status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus })
@@ -56,7 +52,6 @@ export default function Board() {
 
   const handleToggleStar = async (id, starred) => {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, starred: starred } : j));
-    lastJobsRaw.current = ""; // Cache bust
     await fetch('/api/star', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, starred })
@@ -117,7 +112,6 @@ export default function Board() {
     <div style={{ height: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }}>
       <JobModal job={selectedJob} onClose={() => setSelectedJob(null)} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onNext={handleNext} onPrev={handlePrev} />
       
-      {/* RESTORED HEADER HTML */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1 style={{ fontSize: '24px', margin: 0 }}>WAR ROOM</h1>
 

@@ -6,8 +6,6 @@ import os
 import traceback
 import threading
 import glob
-import subprocess
-import tempfile
 from config import PORT, MD_FOLDER
 
 # --- ROBUST IMPORT LOGIC ---
@@ -152,29 +150,6 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                     print(f"[SERVER] 📥 Manual Mission Injection: {term}")
                     mem.add_to_agenda(term, source='USER')
                     self._send_json({"success": True})
-                else:
-                    self.send_error(400)
-                    
-            elif self.path == '/api/run_script':
-                data = json.loads(post_data)
-                script_content = data.get('script', '')
-                if script_content:
-                    # Append command to open explorer and highlight the target file
-                    script_content += "\nexplorer.exe /select,$dest"
-                    
-                    # Create a temporary ps1 file
-                    fd, path = tempfile.mkstemp(suffix=".ps1")
-                    with os.fdopen(fd, 'w') as f:
-                        f.write(script_content)
-                    
-                    try:
-                        print("[SERVER] Executing Deployment Script...")
-                        subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", path], check=True)
-                        os.remove(path)
-                        self._send_json({"success": True})
-                    except Exception as e:
-                        print(f"[SERVER] Error running script: {e}")
-                        self.send_error(500, str(e))
                 else:
                     self.send_error(400)
                     

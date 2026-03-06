@@ -6,7 +6,6 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
   const [copied, setCopied] = useState(false);
 
   const parts = (job.reason || "").split("### DEPLOYMENT SCRIPT:");
-  const reasonText = parts[0].trim();
   const scriptContent = parts.length > 1 ? parts[1].trim() : null;
 
   const handleCopy = (e) => {
@@ -18,7 +17,6 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
 
   const stopProp = (e) => e.stopPropagation();
 
-  // Status Styling
   let borderStyle = '3px solid var(--accent)';
   let bgStyle = 'var(--card-bg)';
   if (job.status === 'APPLIED') { borderStyle = '3px solid var(--applied)'; }
@@ -27,6 +25,20 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
   else if (job.status === 'REJECTED') { borderStyle = '3px solid var(--danger)'; bgStyle = '#1a0505'; }
 
   const isStarred = job.starred === 1 || job.starred === true;
+
+  // Render Distance Badge Helper
+  const renderDistanceBadge = () => {
+    if (job.distance === undefined || job.distance === null) return null;
+    if (job.distance === -1 || job.distance === -1.0) {
+        return <span style={{ border: '1px solid #333', color: '#888', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>🌐 Remote</span>;
+    }
+    const isClose = job.distance <= 30;
+    return (
+        <span style={{ border: `1px solid ${isClose ? 'var(--accent)' : '#333'}`, color: isClose ? 'var(--accent)' : '#888', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>
+            🚗 {Math.round(job.distance)} mi
+        </span>
+    );
+  };
 
   return (
     <div 
@@ -45,10 +57,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
         </div>
         
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button 
-                onClick={(e) => { stopProp(e); onToggleStar(job.id, !isStarred); }}
-                style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: isStarred ? 'gold' : '#333' }}
-            >
+            <button onClick={(e) => { stopProp(e); onToggleStar(job.id, !isStarred); }} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: isStarred ? 'gold' : '#333' }}>
                 <Star size={16} fill={isStarred ? "gold" : "none"} />
             </button>
             <div style={{ fontSize: compact ? '14px' : '20px', fontWeight: 'bold', color: 'var(--accent)', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', height: 'fit-content' }}>
@@ -60,6 +69,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
       <div style={{ display: 'flex', gap: '5px', marginBottom: '8px', flexWrap: 'wrap' }}>
         {!compact && <span style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.selected_resume}</span>}
         <span style={{ border: '1px solid #333', color: '#888', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.location}</span>
+        {renderDistanceBadge()}
       </div>
 
       <div style={{ marginTop: 'auto', display: 'flex', gap: '4px' }} onClick={stopProp}>
@@ -79,21 +89,18 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
                 <button onClick={() => onUpdateStatus(job.id, 'REJECTED')} title="Reject" style={{ background: '#111', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '6px', borderRadius: '3px' }}><X size={14} /></button>
             </>
         )}
-        
         {job.status === 'APPLIED' && (
             <>
                 <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
                 <button onClick={() => onUpdateStatus(job.id, 'INTERVIEW')} title="Mark Interview" style={{ background: '#111', border: '1px solid var(--interview)', color: 'var(--interview)', padding: '6px', borderRadius: '3px' }}><Mic size={14} /></button>
             </>
         )}
-        
         {job.status === 'INTERVIEW' && (
             <>
                 <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
                 <button onClick={() => onUpdateStatus(job.id, 'OFFER')} title="Mark Offer" style={{ background: '#111', border: '1px solid #fff', color: '#fff', padding: '6px', borderRadius: '3px' }}><ArrowRight size={14} /></button>
             </>
         )}
-
         {job.status === 'REJECTED' && (
             <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Restore" style={{ flexGrow: 1, background: '#111', border: '1px solid #444', color: '#fff', padding: '6px', borderRadius: '3px', display:'flex', justifyContent:'center', gap:'5px', alignItems:'center' }}>
                 <RotateCcw size={14} /> RESTORE
@@ -104,10 +111,6 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
   );
 };
 
-// React.memo prevents the card from re-rendering during polling unless its specific data changed
-export default React.memo(JobCard, (prevProps, nextProps) => {
-    return prevProps.job.id === nextProps.job.id &&
-           prevProps.job.status === nextProps.job.status &&
-           prevProps.job.starred === nextProps.job.starred &&
-           prevProps.job.score === nextProps.job.score;
+export default React.memo(JobCard, (prev, next) => {
+    return prev.job.id === next.job.id && prev.job.status === next.job.status && prev.job.starred === next.job.starred && prev.job.score === next.job.score && prev.job.distance === next.job.distance;
 });
