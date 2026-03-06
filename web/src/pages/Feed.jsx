@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star, FileText } from 'lucide-react';
+import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star, FileText, Terminal } from 'lucide-react';
 import JobCard from '../components/JobCard';
 import JobModal from '../components/JobModal';
 
@@ -13,6 +13,10 @@ export default function Feed() {
   const [rules, setRules] = useState("");
   const [rescoreLoading, setRescoreLoading] = useState(false);
 
+  // Commander State
+  const [command, setCommand] = useState("");
+  const [commandLoading, setCommandLoading] = useState(false);
+
   // Filters
   const [search, setSearch] = useState("");
   const [minScore, setMinScore] = useState(parseFloat(localStorage.getItem('cns_score') || 5));
@@ -23,7 +27,7 @@ export default function Feed() {
 
   const lastJobsRaw = useRef("");
   const lastStatusRaw = useRef("");
-  const isTriaging = useRef(false); // NEW: Tracks if Modal is open
+  const isTriaging = useRef(false);
 
   useEffect(() => { localStorage.setItem('cns_score', minScore) }, [minScore]);
   useEffect(() => { localStorage.setItem('cns_remote', remoteOnly) }, [remoteOnly]);
@@ -32,7 +36,6 @@ export default function Feed() {
 
   useEffect(() => { setDisplayLimit(100); }, [search, minScore, remoteOnly, stateFilter, resumeFilter, starsOnly]);
 
-  // Lock background updates if Modal is open
   useEffect(() => {
       isTriaging.current = !!selectedJob;
   }, [selectedJob]);
@@ -43,7 +46,6 @@ export default function Feed() {
       
       if (jobsRes.ok) {
         const text = await jobsRes.text();
-        // ONLY update the grid if data changed AND we are not deep-diving in a modal
         if (text !== lastJobsRaw.current && !isTriaging.current) {
             lastJobsRaw.current = text;
             setJobs(JSON.parse(text));
@@ -74,10 +76,7 @@ export default function Feed() {
   }, []);
 
   const handleUpdateStatus = async (id, newStatus) => {
-    // Optimistic UI Update
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: newStatus } : j));
-    
-    // Background DB Sync
     await fetch('/api/update_status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus })
@@ -85,10 +84,7 @@ export default function Feed() {
   };
 
   const handleToggleStar = async (id, starred) => {
-    // Optimistic UI Update
     setJobs(prev => prev.map(j => j.id === id ? { ...j, starred: starred } : j));
-    
-    // Background DB Sync
     await fetch('/api/star', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, starred })
@@ -105,6 +101,26 @@ export default function Feed() {
     setRescoreLoading(true);
     await fetch('/api/rescore', { method: 'POST' });
     setTimeout(() => { alert("Assimilation Initiated."); setRescoreLoading(false); }, 1000);
+  };
+
+  // --- COMMANDER HANDLER ---
+  const handleSendCommand = async (e) => {
+    e.preventDefault();
+    if (!command.trim()) return;
+    setCommandLoading(true);
+    try {
+        await fetch('/api/agenda', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: command })
+        });
+        setCommand("");
+        alert("Command received. Scout deployed.");
+    } catch (e) {
+        alert("Failed to send command.");
+    } finally {
+        setCommandLoading(false);
+    }
   };
 
   const availableStates = useMemo(() => {
@@ -146,7 +162,6 @@ export default function Feed() {
 
   const visibleJobs = filteredJobs.slice(0, displayLimit);
 
-  // Queue logic targets the CURRENT state of jobs, allowing smooth shifting
   const handleNext = () => {
       if (!selectedJob) return;
       const idx = visibleJobs.findIndex(j => j.id === selectedJob.id);
@@ -164,6 +179,26 @@ export default function Feed() {
     <div>
       <JobModal job={selectedJob} onClose={() => setSelectedJob(null)} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onNext={handleNext} onPrev={handlePrev} />
       
+      {/* COMMANDER MODULE (NEW) */}
+      <div style={{ marginBottom: '15px' }}>
+          <form onSubmit={handleSendCommand} style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flexGrow: 1, position: 'relative' }}>
+                  <Terminal size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)' }} />
+                  <input 
+                    type="text" 
+                    placeholder="Enter mission command (e.g. 'Hunt for mid-level embedded systems roles in Boston or Remote')..." 
+                    value={command} 
+                    onChange={(e) => setCommand(e.target.value)} 
+                    disabled={commandLoading}
+                    style={{ width: '100%', background: '#0a0a0a', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '10px 10px 10px 35px', borderRadius: '4px', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }} 
+                  />
+              </div>
+              <button type="submit" disabled={commandLoading} style={{ background: 'var(--accent)', color: '#000', border: 'none', padding: '0 20px', borderRadius: '4px', fontWeight: 'bold', cursor: commandLoading ? 'wait' : 'pointer' }}>
+                  {commandLoading ? "PARSING..." : "EXECUTE"}
+              </button>
+          </form>
+      </div>
+
       {/* TACTICAL CONTROLS */}
       <div style={{ marginBottom: '15px' }}>
          <button onClick={() => setShowRules(!showRules)} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 15px', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>

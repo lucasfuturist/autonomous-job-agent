@@ -18,9 +18,11 @@ if parent_dir not in sys.path:
 try:
     from tools.memory import Memory
     mem = Memory()
+    from tools.brain import Brain
+    brain = Brain()
     import reweigh_queue
 except Exception as e:
-    print(f"[SERVER] ⚠️ CRITICAL: Could not load Memory module.\nError: {e}")
+    print(f"[SERVER] ⚠️ CRITICAL: Could not load Memory/Brain module.\nError: {e}")
     traceback.print_exc()
 
 FEEDBACK_FILE = "data/tactical_feedback.txt"
@@ -147,10 +149,23 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             
             elif self.path == '/api/agenda':
                 data = json.loads(post_data)
-                term = data.get('term')
-                if term:
-                    print(f"[SERVER] 📥 Manual Mission Injection: {term}")
-                    mem.add_to_agenda(term, source='USER')
+                
+                # --- COMMANDER MODULE: PARSE INTENT ---
+                if 'command' in data:
+                    command_text = data.get('command')
+                    print(f"[COMMANDER] Parsing Intent: '{command_text}'")
+                    
+                    # 1. Ask Qwen 14B to break down the command
+                    terms = brain.parse_command(command_text)
+                    print(f"[COMMANDER] Extracted Missions: {terms}")
+                    
+                    # 2. Inject into Agenda with USER priority
+                    mem.add_to_agenda(terms, source='USER')
+                    self._send_json({"success": True, "terms": terms})
+                    
+                elif 'term' in data:
+                    # Legacy manual term injection
+                    mem.add_to_agenda(data.get('term'), source='USER')
                     self._send_json({"success": True})
                 else:
                     self.send_error(400)

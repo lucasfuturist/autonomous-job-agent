@@ -37,6 +37,25 @@ class Brain:
         except:
             return "Error loading rules."
 
+    def parse_command(self, user_input):
+        prompt = f"""
+        Role: Mission Commander.
+        User Command: "{user_input}"
+        
+        Task: Translate this natural language command into a list of 3-5 specific, high-yield job search queries that cover the user's intent.
+        
+        Output JSON: {{"queries": ["term1", "term2", "term3"]}}
+        """
+        with self.lock:
+            try:
+                # ROUTED TO SCOUT (Fast)
+                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
+                data = json.loads(res['message']['content'])
+                return data.get('queries', [])
+            except Exception as e:
+                print(f"[BRAIN] Command Parse Failed: {e}")
+                return [user_input]
+
     def generate_initial_strategy(self):
         sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 40))
         
