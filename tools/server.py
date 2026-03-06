@@ -155,16 +155,20 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                     command_text = data.get('command')
                     print(f"[COMMANDER] Parsing Intent: '{command_text}'")
                     
-                    # 1. Ask Qwen 14B to break down the command
+                    # 1. Ask Sniper to break down the command
                     terms = brain.parse_command(command_text)
                     print(f"[COMMANDER] Extracted Missions: {terms}")
                     
                     # 2. Inject into Agenda with USER priority
                     mem.add_to_agenda(terms, source='USER')
+
+                    # 3. TRIGGER PURGE SIGNAL
+                    mem.flag_purge_queue()
+                    print(f"[COMMANDER] PURGE SIGNAL RAISED. Clearing deck for {len(terms)} new missions.")
+
                     self._send_json({"success": True, "terms": terms})
                     
                 elif 'term' in data:
-                    # Legacy manual term injection
                     mem.add_to_agenda(data.get('term'), source='USER')
                     self._send_json({"success": True})
                 else:

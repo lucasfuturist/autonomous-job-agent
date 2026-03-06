@@ -43,13 +43,17 @@ class Brain:
         User Command: "{user_input}"
         
         Task: Translate this natural language command into a list of 3-5 specific, high-yield job search queries that cover the user's intent.
+        CRITICAL RULE: Combine ROLE and LOCATION into single strings.
+        
+        BAD OUTPUT: ["Robotics", "Seattle", "Jobs"]
+        GOOD OUTPUT: ["Robotics Engineer Seattle", "Robotics Engineer Austin", "Mid-Level Systems Engineer Seattle"]
         
         Output JSON: {{"queries": ["term1", "term2", "term3"]}}
         """
         with self.lock:
             try:
-                # ROUTED TO SCOUT (Fast)
-                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
+                # ROUTED TO SNIPER (Intelligent)
+                res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
                 data = json.loads(res['message']['content'])
                 return data.get('queries', [])
             except Exception as e:

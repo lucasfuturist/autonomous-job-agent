@@ -11,6 +11,7 @@ from config import DB_FILE, JSON_FEED, MISSIONS_FEED, STATUS_FEED, MIN_SCORE
 class Memory:
     def __init__(self):
         self.home_coords = (42.3601, -71.0589) # Boston, MA
+        self.purge_flag_file = "data/signal_purge.flag"
         self._init_db()
 
     def _get_conn(self):
@@ -51,6 +52,22 @@ class Memory:
 
         conn.commit()
         conn.close()
+
+    # --- SIGNALING ---
+    def flag_purge_queue(self):
+        """Raises a flag to tell the CNS to dump its memory queue."""
+        with open(self.purge_flag_file, 'w') as f:
+            f.write("1")
+
+    def check_and_clear_purge_flag(self):
+        """Checks if purge is requested, and clears the flag if so."""
+        if os.path.exists(self.purge_flag_file):
+            try:
+                os.remove(self.purge_flag_file)
+                return True
+            except:
+                return False
+        return False
 
     # --- GEOCODING ENGINE ---
     def _haversine(self, lat1, lon1, lat2, lon2):
@@ -200,14 +217,40 @@ class Memory:
     def peek_next_agenda_item(self):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT term, source FROM agenda WHERE status='PENDING' ORDER BY added_at ASC LIMIT 1").fetchone()
+        # PRIORITIZE USER > RECOVERY > SYSTEM
+        query = """
+            SELECT term, source FROM agenda 
+            WHERE status='PENDING' 
+            ORDER BY 
+                CASE 
+                    WHEN source='USER' THEN 0 
+                    WHEN source='RECOVERY' THEN 1 
+                    ELSE 2 
+                END, 
+                added_at ASC 
+            LIMIT 1
+        """
+        row = conn.execute(query).fetchone()
         conn.close()
         return dict(row) if row else None
 
     def get_next_agenda_item(self):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT term, source FROM agenda WHERE status='PENDING' ORDER BY added_at ASC LIMIT 1").fetchone()
+        # PRIORITIZE USER > RECOVERY > SYSTEM
+        query = """
+            SELECT term, source FROM agenda 
+            WHERE status='PENDING' 
+            ORDER BY 
+                CASE 
+                    WHEN source='USER' THEN 0 
+                    WHEN source='RECOVERY' THEN 1 
+                    ELSE 2 
+                END, 
+                added_at ASC 
+            LIMIT 1
+        """
+        row = conn.execute(query).fetchone()
         term = None
         if row:
             term = row['term']

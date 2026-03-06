@@ -33,6 +33,15 @@ def hunter_loop():
     hunting_active = True
     
     while True:
+        # --- COMMAND OVERRIDE CHECK ---
+        if mem.check_and_clear_purge_flag():
+            print("\n[CNS] 🧹 COMMAND OVERRIDE DETECTED. PURGING ANALYST QUEUE...")
+            with job_queue.mutex:
+                job_queue.queue.clear()
+            print("[CNS] 🧹 Queue cleared. Analysts awaiting new mission targets.\n")
+            # Force hunting active in case it was sleeping
+            hunting_active = True
+
         # 3. Check for Priority Bypass
         next_item = mem.peek_next_agenda_item()
         
