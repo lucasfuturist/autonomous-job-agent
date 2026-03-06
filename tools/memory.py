@@ -95,6 +95,7 @@ class Memory:
 
         dist = None
         try:
+            print(f"  [NAV] Uncached location detected: '{loc_str}'. Pinging satellite (1s delay)...")
             time.sleep(1.1) 
             url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(loc_str)}&format=json&limit=1"
             req = urllib.request.Request(url, headers={'User-Agent': 'CNS_Tactical_Agent/1.0'})
@@ -141,6 +142,14 @@ class Memory:
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT * FROM mission_logs ORDER BY run_at DESC LIMIT ?", (limit,)).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_all_mission_logs(self):
+        """Retrieve complete mission history without limits."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM mission_logs ORDER BY run_at DESC").fetchall()
         conn.close()
         return [dict(r) for r in rows]
 

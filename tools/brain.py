@@ -251,7 +251,6 @@ class Brain:
             try:
                 res_skills = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_skills}], format='json')
                 parsed_skills = json.loads(res_skills['message']['content'])
-                # Sometimes models nest it under a 'skills' key
                 if "skills" in parsed_skills and isinstance(parsed_skills["skills"], dict):
                     dynamic_skills = parsed_skills["skills"]
                 elif parsed_skills:
@@ -262,10 +261,11 @@ class Brain:
 
         clean_company = re.sub(r'[^a-zA-Z0-9]', '', company)
         clean_title = re.sub(r'[^a-zA-Z0-9]', '', job_title)
-        filename = f"{clean_company}_{clean_title}_JIT"
+        
+        # --- FIX: NAMING CONVENTION UPDATE ---
+        filename = f"{clean_company}_{clean_title}_Lucas_Mougeot"
         
         # --- MARKDOWN ASSEMBLY ---
-        # Note: Removed '# Lucas Mougeot' H1 tag to prevent duplicate name in PDF
         md_content = f"""---
 target_title: "{strategy['target_title']}"
 core_competency: "{strategy['core_competency']}"
@@ -278,12 +278,11 @@ core_competency: "{strategy['core_competency']}"
 """
         
         # --- EXPERIENCE SORTING ---
-        # FIX: Prioritize "Founding Systems Engineer" to the top
         experiences = master.get('experience', [])
         try:
             experiences.sort(key=lambda x: 0 if "Founding Systems Engineer" in x.get('title', '') else 1)
         except Exception:
-            pass # Keep original order if sort fails
+            pass 
 
         for exp in experiences:
             role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
@@ -298,7 +297,6 @@ core_competency: "{strategy['core_competency']}"
         # Assemble the Tailored Skills Markdown
         md_content += "## Core Skills\n"
         for category, items in dynamic_skills.items():
-            # Only render the category if the LLM left skills inside it
             if items and isinstance(items, list): 
                 md_content += f"- **{category.replace('_', ' ').title()}:** {', '.join(items)}\n"
             
@@ -316,8 +314,6 @@ core_competency: "{strategy['core_competency']}"
         return filename, None
 
     def strategize(self, job):
-        # We also lock the evolution engine to your Master List.
-        # This guarantees zero hallucinated titles, while still dynamically exploring the matrix.
         sample_universe = random.sample(INITIAL_SEARCH_TERMS, 20)
         
         prompt = f"""
@@ -333,8 +329,6 @@ core_competency: "{strategy['core_competency']}"
             try:
                 res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
                 terms = json.loads(res['message']['content']).get('terms', [])
-                
-                # Double-check safety: ensure the LLM actually picked from the list and didn't hallucinate
                 valid_terms = [t for t in terms if t in INITIAL_SEARCH_TERMS]
                 return valid_terms if valid_terms else random.sample(INITIAL_SEARCH_TERMS, 2)
             except: 

@@ -259,6 +259,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_rules()
             elif self.path.startswith('/api/agenda'):
                 self._handle_get_agenda()
+            elif self.path.startswith('/api/logs/all'):
+                self._handle_get_all_logs()
             elif self.path.startswith('/api/logs'):
                 self._handle_get_logs()
             elif self.path.startswith('/api/resume'):
@@ -298,6 +300,10 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_get_logs(self):
         logs = mem.get_mission_logs(limit=50)
+        self._send_json(logs)
+
+    def _handle_get_all_logs(self):
+        logs = mem.get_all_mission_logs()
         self._send_json(logs)
 
     def _handle_get_resume(self):
