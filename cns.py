@@ -22,10 +22,17 @@ def hunter_loop():
 
     # 2. Boot Check
     if mem.get_agenda_status() == 0:
-        print("[CNS] 📭 Agenda empty. Generating initial strategy...")
+        print("[CNS] 📭 Agenda empty. Generating initial data-driven strategy...")
         autonomous_seeds = brain.generate_initial_strategy()
         if not autonomous_seeds:
-            autonomous_seeds = ["AI Engineer", "Robotics Engineer"]
+            autonomous_seeds = ["Systems Engineer", "Materials Engineer"]
+        
+        # Surface the terms to the console
+        print(f"\n[CNS] 🎯 Generated Strategy (Master List):")
+        for i, term in enumerate(autonomous_seeds):
+            print(f"  {i+1}. {term}")
+        print("\n")
+            
         mem.add_to_agenda(autonomous_seeds, source='SYSTEM')
     else:
         print(f"[CNS] 📅 Resuming with {mem.get_agenda_status()} items in Agenda.")
@@ -39,7 +46,6 @@ def hunter_loop():
             with job_queue.mutex:
                 job_queue.queue.clear()
             print("[CNS] 🧹 Queue cleared. Analysts awaiting new mission targets.\n")
-            # Force hunting active in case it was sleeping
             hunting_active = True
 
         # 3. Check for Priority Bypass
@@ -75,8 +81,15 @@ def hunter_loop():
                 print(f"[CNS] 🪐 Gravity Pull: Re-queueing high-yield term '{gravity_term}' (Cooldown passed)")
                 term = gravity_term
             else:
-                print("[CNS] 🧠 Agenda exhausted. Brainstorming new vector...")
+                print("[CNS] 🧠 Agenda exhausted. Brainstorming new vector from Master Profile...")
                 new_terms = brain.generate_initial_strategy()
+                
+                # Surface the terms to the console
+                print(f"\n[CNS] 🎯 Brainstorm Complete (Master List):")
+                for i, t in enumerate(new_terms):
+                    print(f"  {i+1}. {t}")
+                print("\n")
+                
                 filtered_terms = mem.filter_cooldown_terms(new_terms, hours=24)
                 
                 if filtered_terms:
@@ -126,7 +139,6 @@ def analyst_loop(worker_id):
         
         mem.feedback_mission_quality(job.get('search_term'), score)
 
-        # --- JIT FORGE INTEGRATION ---
         if score >= MIN_SCORE:
             print(f"[CNS-{worker_id}] JIT Assembling Resume for {job['company']}...")
             resume, deployment_notes = brain.build_jit_resume(job)
@@ -156,7 +168,6 @@ if __name__ == "__main__":
     threading.Thread(target=start_server, daemon=True).start()
     threading.Thread(target=status_loop, daemon=True).start()
     
-    # Recover stale queue jobs (we no longer depend on full_resumes length check to boot)
     stale_jobs = mem.get_stale_jobs()
     if stale_jobs:
         print(f"[CNS] ⚠️  RECOVERY MODE: Found {len(stale_jobs)} stale targets. Re-analyzing...")

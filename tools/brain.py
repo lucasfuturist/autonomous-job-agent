@@ -4,7 +4,7 @@ import os
 import re
 import threading
 import random
-from config import OLLAMA_MODEL, HEAVY_MODEL, MD_FOLDER, CORE_SCHEMA, TITLE_BLACKLIST, COMPANY_BLACKLIST, ALLOWLIST_OVERRIDES, USER_PREFERENCES
+from config import OLLAMA_MODEL, HEAVY_MODEL, MD_FOLDER, TITLE_BLACKLIST, COMPANY_BLACKLIST, ALLOWLIST_OVERRIDES, USER_PREFERENCES, MAX_COMMUTE_MILES, INITIAL_SEARCH_TERMS
 
 class Brain:
     def __init__(self):
@@ -13,6 +13,9 @@ class Brain:
         self.feedback_file = "data/tactical_feedback.txt"
         self.master_data_path = "data/master_career_data.json"
         self._ensure_md_folder()
+
+        from tools.memory import Memory
+        self.MemoryClass = Memory
 
     def _ensure_md_folder(self):
         if not os.path.exists(MD_FOLDER):
@@ -60,32 +63,28 @@ class Brain:
                 return [user_input]
 
     def generate_initial_strategy(self):
-        sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 40))
+        # We completely bypass the LLM hallucination phase.
+        # We load the user's hardcoded 100-item Master List and shuffle it.
+        # This creates the exact "exhaust one search, move to the next" queue behavior requested.
+        print("[BRAIN] Loading Curated Master Target List...")
         
-        prompt = f"""
-        Role: Tactical Headhunter.
-        Candidate Loadouts (Resumes): Dynamic JIT Master Vault (AI, Systems, Robotics)
-        Primary Search Universe Sample: {sample_universe}... (and 60+ other niche technical domains)
-        
-        TASK: Based on the candidate's broad profile and the universe, generate 10 highly specific Job Search Queries.
-        Focus on:
-        1. High-yield titles (e.g., 'Founding Systems Engineer', 'Robotics Integrator')
-        2. Niche tech (e.g., 'Deterministic RAG', 'Computational Geometry')
-        3. Hardware-Software bridges.
-        
-        Output JSON: {{"terms": ["term1", "term2", ...]}}
-        """
-        with self.lock:
-            try:
-                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
-                data = json.loads(res['message']['content'])
-                terms = data.get('terms', [])
-                clean_terms = [t.replace("Lucas Mougeot", "").strip() for t in terms]
-                return clean_terms
-            except: 
-                return random.sample(CORE_SCHEMA, 5)
+        terms = INITIAL_SEARCH_TERMS.copy()
+        random.shuffle(terms)
+        return terms
     
     def evaluate(self, job):
+        # 0. PRE-COGNITION GEOFENCE (Save GPU cycles)
+        location = job.get('location', '')
+        if location:
+            mem_instance = self.MemoryClass()
+            distance = mem_instance.get_or_fetch_distance(location)
+            
+            if distance is not None:
+                # -1.0 is Remote
+                if distance != -1.0 and distance > MAX_COMMUTE_MILES:
+                    print(f"[BRAIN] 🛑 Geofence Reject: '{job['company']}' is {distance} miles away in {location}.")
+                    return {"score": 0, "reason": f"Geofence Reject: {distance} miles away (Max allowed: {MAX_COMMUTE_MILES} mi). Not remote."}
+
         # 1. SMART HEURISTIC CHECK (Regex token-based)
         title_lower = str(job.get('title', '')).lower()
         company_lower = str(job.get('company', '')).lower()
@@ -190,21 +189,24 @@ class Brain:
         actual_experience_text = "\n".join([f"- {bullet_catalog[i]}" for i in valid_approved_ids[:8]])
         
         prompt_strategy = f"""
-        Role: Elite Career Strategist.
+        Role: Ruthless, Strictly Factual Technical Resume Writer.
         Target Job: {job_title} at {company}
-        Job Description Sample: {job_desc[:800]}
+        Job Description Context: {job_desc[:800]}
 
-        Candidate's ACTUAL Bullets Selected:
+        Candidate's ACTUAL Approved Experience for this role:
         {actual_experience_text}
 
         TASK: Construct the Strategic Header and Narrative.
         
         1. **target_title**: A specific, professional title adapted for this role (e.g. "Senior Robotics Engineer" or "AI Infrastructure Lead").
         2. **core_competency**: A 3-5 word technical subtitle anchoring the candidate's value (e.g. "Real-Time Perception & Edge AI" or "Deterministic Systems & LLM Ops").
-        3. **summary**: A 3-4 sentence professional summary.
-           - ANTI-PATTERNS: Do NOT use "Seasoned", "Passionate", "Results-oriented", "I am a...", or generic fluff.
-           - STYLE: Dense, narrative, specific. Bridge the candidate's actual work (NASA, Robotics, Stealth Startup) to the specific needs of {company}.
-           - TONE: High-Agency Engineering Leader.
+        3. **summary**: A punchy, 3-4 sentence professional summary.
+
+        ABSOLUTE ZERO-HALLUCINATION RULES FOR SUMMARY:
+        - ZERO DOMAIN INFERENCE: You are FORBIDDEN from claiming the candidate has experience in {company}'s specific domain (e.g., "Ion Traps", "Human-Machine Teaming", "Aerospace Logistics") UNLESS those exact words appear in the Candidate's ACTUAL Experience text above.
+        - DO NOT SHAPE-SHIFT: Do not state the candidate is an "Expert in [Target Job Title]" if they have never held that title.
+        - FACT-BASED ALIGNMENT: State ONLY the hardware, software, and systems the candidate has factually built. Frame those TRUE skills as the reason they are highly capable of solving {company}'s engineering problems.
+        - ANTI-PATTERNS: Do NOT use "Seasoned", "Passionate", "Results-oriented", "I am a...", or generic fluff.
 
         Output ONLY valid JSON: {{ "target_title": "...", "core_competency": "...", "summary": "..." }}
         """
@@ -224,15 +226,50 @@ class Brain:
             except Exception as e:
                 print(f"[BRAIN] Strategy Synthesis Failed: {e}")
 
+        # --- DYNAMIC SKILLS EXTRACTION START ---
+        print(f"[BRAIN] Tailoring Core Skills for {company}...")
+        prompt_skills = f"""
+        Role: Strict Technical Recruiter.
+        Job Title: {job_title}
+        Job Description: {job_desc[:1000]}
+        
+        Candidate's Master Skills JSON:
+        {json.dumps(master.get('skills', {}))}
+        
+        TASK: Filter the Candidate's Master Skills JSON. Keep ONLY the skills highly relevant to this specific job.
+        
+        CRITICAL RULES:
+        1. RUTHLESS PRUNING: Drop completely irrelevant skills (e.g., remove "SEM/EDS" and "HiPIMS" if it's a pure software role; remove "React" if it's a pure hardware role).
+        2. NO HALLUCINATION: DO NOT invent new skills. Only use the exact strings present in the Master JSON.
+        3. MAXIMUM 15 SKILLS: Keep the list punchy, dense, and hyper-targeted.
+        
+        Output ONLY valid JSON matching the original category structure.
+        """
+        
+        dynamic_skills = master.get('skills', {}) # Fallback
+        with self.lock:
+            try:
+                res_skills = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_skills}], format='json')
+                parsed_skills = json.loads(res_skills['message']['content'])
+                # Sometimes models nest it under a 'skills' key
+                if "skills" in parsed_skills and isinstance(parsed_skills["skills"], dict):
+                    dynamic_skills = parsed_skills["skills"]
+                elif parsed_skills:
+                    dynamic_skills = parsed_skills
+            except Exception as e:
+                print(f"[BRAIN] Dynamic Skills Extraction Failed: {e}")
+        # --- DYNAMIC SKILLS EXTRACTION END ---
+
         clean_company = re.sub(r'[^a-zA-Z0-9]', '', company)
         clean_title = re.sub(r'[^a-zA-Z0-9]', '', job_title)
         filename = f"{clean_company}_{clean_title}_JIT"
         
+        # --- MARKDOWN ASSEMBLY ---
+        # Note: Removed '# Lucas Mougeot' H1 tag to prevent duplicate name in PDF
         md_content = f"""---
 target_title: "{strategy['target_title']}"
 core_competency: "{strategy['core_competency']}"
 ---
-# Lucas Mougeot
 
 ## Professional Summary
 {strategy['summary']}
@@ -240,7 +277,15 @@ core_competency: "{strategy['core_competency']}"
 ## Relevant Experience
 """
         
-        for exp in master.get('experience', []):
+        # --- EXPERIENCE SORTING ---
+        # FIX: Prioritize "Founding Systems Engineer" to the top
+        experiences = master.get('experience', [])
+        try:
+            experiences.sort(key=lambda x: 0 if "Founding Systems Engineer" in x.get('title', '') else 1)
+        except Exception:
+            pass # Keep original order if sort fails
+
+        for exp in experiences:
             role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
             role_bullets = role_bullets[:12] 
             
@@ -249,11 +294,13 @@ core_competency: "{strategy['core_competency']}"
                 for b in role_bullets:
                     md_content += f"- {b['text']}\n"
                 md_content += "\n"
-                
+        
+        # Assemble the Tailored Skills Markdown
         md_content += "## Core Skills\n"
-        skills = master.get('skills', {})
-        for category, items in skills.items():
-            md_content += f"- **{category.replace('_', ' ').title()}:** {', '.join(items)}\n"
+        for category, items in dynamic_skills.items():
+            # Only render the category if the LLM left skills inside it
+            if items and isinstance(items, list): 
+                md_content += f"- **{category.replace('_', ' ').title()}:** {', '.join(items)}\n"
             
         md_content += "\n## Education\n"
         for ed in master.get('education', []):
@@ -269,18 +316,26 @@ core_competency: "{strategy['core_competency']}"
         return filename, None
 
     def strategize(self, job):
-        sample_universe = random.sample(CORE_SCHEMA, min(len(CORE_SCHEMA), 20))
+        # We also lock the evolution engine to your Master List.
+        # This guarantees zero hallucinated titles, while still dynamically exploring the matrix.
+        sample_universe = random.sample(INITIAL_SEARCH_TERMS, 20)
         
         prompt = f"""
         Target Identified: "{job['title']}".
-        Your Search Universe Sample: {sample_universe}
         
-        Suggest 2 search terms that would find 'neighboring' roles.
+        TASK: Select exactly 2 job titles from the Approved Master List that are most similar or adjacent to the Target.
+        
+        Approved Master List: {sample_universe}
         
         Output JSON: {{"terms": ["term1", "term2"]}}
         """
         with self.lock:
             try:
                 res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
-                return json.loads(res['message']['content']).get('terms', [])
-            except: return []
+                terms = json.loads(res['message']['content']).get('terms', [])
+                
+                # Double-check safety: ensure the LLM actually picked from the list and didn't hallucinate
+                valid_terms = [t for t in terms if t in INITIAL_SEARCH_TERMS]
+                return valid_terms if valid_terms else random.sample(INITIAL_SEARCH_TERMS, 2)
+            except: 
+                return []

@@ -41,6 +41,10 @@ def perform_sweep(term, location, is_remote):
         )
         
         results = []
+        # Protect against empty pandas dataframe returns
+        if jobs is None or len(jobs) == 0:
+            return results
+
         for _, row in jobs.iterrows():
             url = str(row.get('job_url', ''))
             if not url: continue
@@ -48,13 +52,21 @@ def perform_sweep(term, location, is_remote):
             company = str(row.get('company', 'Unknown')).strip()
             title = str(row.get('title', 'Unknown')).strip()
             
+            # FIX: Remote Job Geofence Rescue
+            # If we explicitly requested remote jobs, job boards often still return the physical HQ city.
+            # We prepend "Remote" to ensure the local geofencer instantly flags it as -1.0 distance,
+            # saving API pings and preventing false-positive rejections.
+            raw_loc = str(row.get('location', final_location)).strip()
+            if final_remote and 'remote' not in raw_loc.lower():
+                raw_loc = f"Remote - {raw_loc}"
+
             results.append({
                 "id": hashlib.md5(url.encode()).hexdigest(),
                 "company": company,
                 "title": title,
                 "description": str(row.get('description', '')),
                 "url": url,
-                "location": str(row.get('location', final_location)),
+                "location": raw_loc,
                 "search_term": term
             })
         return results
