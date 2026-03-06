@@ -204,8 +204,9 @@ class Brain:
 
         ABSOLUTE ZERO-HALLUCINATION RULES FOR SUMMARY:
         - ZERO DOMAIN INFERENCE: You are FORBIDDEN from claiming the candidate has experience in {company}'s specific domain (e.g., "Ion Traps", "Human-Machine Teaming", "Aerospace Logistics") UNLESS those exact words appear in the Candidate's ACTUAL Experience text above.
-        - DO NOT SHAPE-SHIFT: Do not state the candidate is an "Expert in [Target Job Title]" if they have never held that title.
+        - DO NOT SHAPE-SHIFT: Do not state the candidate is an "Expert in [Target Job Title]" if they have never held that title. Anchor the identity in their actual background.
         - FACT-BASED ALIGNMENT: State ONLY the hardware, software, and systems the candidate has factually built. Frame those TRUE skills as the reason they are highly capable of solving {company}'s engineering problems.
+        - NARRATIVE PROSE: Write in flowing, professional resume prose using implied first-person. DO NOT start sentences with raw, floating verbs like "Architect and implement." Use connecting phrases like "Systems Engineer with a proven track record of architecting..." or "Leverages deep expertise in X to build Y."
         - ANTI-PATTERNS: Do NOT use "Seasoned", "Passionate", "Results-oriented", "I am a...", or generic fluff.
 
         Output ONLY valid JSON: {{ "target_title": "...", "core_competency": "...", "summary": "..." }}

@@ -330,6 +330,28 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
         
         self._send_json({"content": content})
 
+    def _handle_save_resume(self, data):
+        name = data.get('name')
+        content = data.get('content')
+        
+        if not name or content is None:
+            self.send_error(400, "Missing name or content")
+            return
+
+        clean_name = os.path.basename(name)
+        if not clean_name.endswith('.md'):
+            clean_name += '.md'
+            
+        target_path = os.path.join(MD_FOLDER, clean_name)
+        
+        try:
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            self._send_json({"success": True})
+        except Exception as e:
+            print(f"[SERVER] Failed to save resume: {e}")
+            self.send_error(500, f"Save failed: {e}")
+
     def _send_json(self, data):
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
@@ -415,6 +437,10 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                         self._send_json({"success": False, "error": "Source resume not found"})
                 else:
                     self.send_error(400, "Missing resume parameter")
+            
+            elif self.path == '/api/save_resume':
+                data = json.loads(post_data)
+                self._handle_save_resume(data)
                     
             else:
                 self.send_error(404)

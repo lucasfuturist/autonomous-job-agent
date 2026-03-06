@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
@@ -7,6 +7,10 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   
   const [deploying, setDeploying] = useState(false);
   const [deployed, setDeployed] = useState(false);
+  
+  // EDIT MODE STATE
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
   
   const containerRef = useRef(null);
   const [leftWidth, setLeftWidth] = useState(40);
@@ -48,12 +52,45 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   useEffect(() => {
     if (job?.selected_resume) {
         setResumeContent("Loading...");
+        setIsEditing(false); // Reset edit mode on job change
         fetch(`/api/resume?name=${encodeURIComponent(job.selected_resume)}`)
             .then(res => res.json())
             .then(data => setResumeContent(data.content))
             .catch(err => setResumeContent("Failed to load resume."));
     }
   }, [job]);
+
+  // --- EDIT HANDLERS ---
+  const handleStartEdit = () => {
+      setEditContent(resumeContent);
+      setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+      setIsEditing(false);
+  };
+
+  const handleSaveEdit = async () => {
+      try {
+          const res = await fetch('/api/save_resume', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  name: job.selected_resume,
+                  content: editContent
+              })
+          });
+          if (res.ok) {
+              setResumeContent(editContent);
+              setIsEditing(false);
+          } else {
+              alert("Failed to save resume.");
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Error saving resume.");
+      }
+  };
 
   if (!job) return null;
 
@@ -240,8 +277,8 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ padding: '10px', background: '#111' }}>
                         <button 
-                            onClick={handleDeploy} disabled={deploying || !job.selected_resume || job.selected_resume === 'Default'}
-                            style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || job.selected_resume === 'Default') ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: (job.selected_resume === 'Default') ? 0.5 : 1 }}
+                            onClick={handleDeploy} disabled={deploying || !job.selected_resume || job.selected_resume === 'Default' || isEditing}
+                            style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || job.selected_resume === 'Default' || isEditing) ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: (job.selected_resume === 'Default' || isEditing) ? 0.5 : 1 }}
                         >
                             {deploying ? "CONVERTING..." : deployed ? "OPENING PDF..." : "DEPLOY PDF"}
                             {!deploying && !deployed && <FileDown size={14} />}
@@ -295,11 +332,44 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
         {/* PANE 3: ASSET (Resume) */}
         <div style={{ flexGrow: 1, background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <User size={14} /> ACTIVE ASSET ({job.selected_resume})
+            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <User size={14} /> ACTIVE ASSET ({job.selected_resume})
+                </div>
+                {/* EDIT CONTROLS */}
+                {!isEditing ? (
+                    <button onClick={handleStartEdit} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', padding: '4px' }} title="Edit Resume">
+                        <Edit size={16} />
+                    </button>
+                ) : (
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <button onClick={handleSaveEdit} style={{ background: 'var(--accent)', border: 'none', color: '#000', borderRadius: '3px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <Save size={12} /> SAVE
+                        </button>
+                        <button onClick={handleCancelEdit} style={{ background: '#333', border: 'none', color: '#fff', borderRadius: '3px', padding: '4px 8px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <XCircle size={12} /> CANCEL
+                        </button>
+                    </div>
+                )}
             </div>
-            <div style={{ padding: '20px', overflowY: 'auto', color: '#888', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-                {formatResume(resumeContent)}
+            
+            {/* CONTENT AREA */}
+            <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative' }}>
+                {isEditing ? (
+                    <textarea 
+                        value={editContent} 
+                        onChange={(e) => setEditContent(e.target.value)}
+                        style={{ 
+                            width: '100%', height: '100%', background: '#050505', color: '#ddd', 
+                            border: 'none', padding: '20px', fontFamily: 'monospace', fontSize: '12px', 
+                            resize: 'none', outline: 'none', boxSizing: 'border-box'
+                        }} 
+                    />
+                ) : (
+                    <div style={{ padding: '20px', height: '100%', overflowY: 'auto', color: '#888', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', boxSizing: 'border-box' }}>
+                        {formatResume(resumeContent)}
+                    </div>
+                )}
             </div>
         </div>
 
