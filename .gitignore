@@ -11,6 +11,7 @@ data/*.json
 data/live_logs.txt
 data/output_mds/
 data/input_pdfs/
+data/deployments
 data/*.tmp
 pdf2md/failed_pdfs
 pdf2md/submitted_pdfs
