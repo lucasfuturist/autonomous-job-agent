@@ -1,6 +1,13 @@
 # config.py
-OLLAMA_MODEL = "qwen:14b"             # The Scout (Fast brainstorming)
-HEAVY_MODEL = "llama3.1:70b"          # The Sniper (Deep reasoning, utilizes Dual 4090s)
+
+# --- MULTI-AGENT INTELLIGENCE CORE ---
+# GPU 0: The Scout (High-speed batch processing)
+OLLAMA_MODEL = "qwen:14b"             
+
+# GPU 1: The Sniper (High-intelligence JIT Resume compilation)
+# qwen2.5:32b fits entirely on one 4090 (19GB), avoiding the PCIe bottleneck.
+HEAVY_MODEL = "qwen2.5:32b"          
+
 PORT = 8050
 
 # --- PATHS ---
@@ -153,5 +160,5 @@ CORE_SCHEMA = [
 # --- PERFORMANCE & MODES ---
 MIN_SCORE = 7            # The minimum LLM score required to deploy a resume
 SWEEP_DEPTH = 100        # Exhaustive search: Pull up to 100 jobs per term per location
-NUM_ANALYSTS = 4         # Multi-thread LLM evaluation
+NUM_ANALYSTS = 3         # Restored concurrency. Isolated models won't OOM your 48GB.
 MAX_QUEUE_DEPTH = 50     # If queue > 50, Hunter sleeps (Matching Mode)

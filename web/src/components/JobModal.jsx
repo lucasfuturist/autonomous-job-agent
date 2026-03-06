@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [resumeContent, setResumeContent] = useState("Loading resume...");
   
   const [deploying, setDeploying] = useState(false);
@@ -16,13 +15,11 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   const isStarred = job?.starred === 1 || job?.starred === true;
 
   // --- ACTION HANDLERS ---
-  // Triage actions advance the queue automatically
   const handleTriageAction = React.useCallback((status) => {
       if (onNext) onNext(); else onClose(); 
       onUpdateStatus(job.id, status);       
   }, [job?.id, onNext, onClose, onUpdateStatus]);
 
-  // Corrections (Undo/Restore) stay on the screen
   const handleCorrection = (status) => {
       onUpdateStatus(job.id, status);
   };
@@ -39,7 +36,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       if (key === 'arrowright' && onNext) onNext();
       if (key === 'arrowleft' && onPrev) onPrev();
       
-      // Triage Hotkeys (Only fire if the job is in a valid state for them)
       if (key === 'x' && job.status === 'TARGET') handleTriageAction('REJECTED');
       if (key === 'a' && job.status === 'TARGET') handleTriageAction('APPLIED');
       if (key === 's') onToggleStar(job.id, !isStarred);
@@ -62,9 +58,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   if (!job) return null;
 
   // --- PARSERS & FORMATTERS ---
-  const parts = (job.reason || "").split("### DEPLOYMENT SCRIPT:");
-  const reasonText = parts[0].trim();
-  const scriptContent = parts.length > 1 ? parts[1].trim() : null;
+  const reasonText = (job.reason || "").trim();
 
   const formatText = (text) => {
     if (!text) return { __html: "" };
@@ -89,23 +83,22 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     setTimeout(() => setUrlCopied(false), 2000);
   };
 
-  const handleCopyScript = () => {
-    navigator.clipboard.writeText(scriptContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const handleDeploy = async () => {
+    if (!job.selected_resume) return;
     setDeploying(true);
     try {
-        await fetch('/api/run_script', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script: scriptContent })
+        await fetch('/api/deploy', {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resume: job.selected_resume })
         });
         setDeployed(true);
         setTimeout(() => setDeployed(false), 3000);
-    } catch (e) { console.error(e); } 
-    finally { setDeploying(false); }
+    } catch (e) { 
+        console.error("Deploy failed:", e); 
+    } finally { 
+        setDeploying(false); 
+    }
   };
 
   // --- RESIZE LOGIC ---
@@ -232,36 +225,18 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                     {formatResume(reasonText)}
                 </div>
 
-                {scriptContent && (
-                    <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                        
-                        {/* Visible Script & Copy Button */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 15px', background: '#151515', borderBottom: '1px solid #333' }}>
-                            <span style={{ fontSize: '10px', color: '#666', fontWeight: 'bold' }}>POWERSHELL LOADOUT</span>
-                            <button onClick={handleCopyScript} style={{ background: 'transparent', border: 'none', color: copied ? 'var(--accent)' : '#666', cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                {copied ? "COPIED" : "COPY SCRIPT"} <Copy size={10} />
-                            </button>
-                        </div>
-                        <textarea 
-                            readOnly 
-                            value={scriptContent} 
-                            style={{ width: '100%', height: '80px', background: 'transparent', border: 'none', color: '#666', padding: '15px', fontFamily: 'monospace', fontSize: '11px', resize: 'none', boxSizing: 'border-box' }} 
-                        />
-                        
-                        {/* 1-Click Execute Button */}
-                        <div style={{ padding: '10px', borderTop: '1px solid #222', background: '#111' }}>
-                            <button 
-                                onClick={handleDeploy} disabled={deploying}
-                                style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: deploying ? 'wait' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
-                            >
-                                {deploying ? "DEPLOYING..." : deployed ? "DEPLOYED TO EXPLORER!" : "EXECUTE DEPLOYMENT"}
-                                {!deploying && !deployed && <FileDown size={14} />}
-                                {deployed && <Check size={14} />}
-                            </button>
-                        </div>
-
+                <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '10px', background: '#111' }}>
+                        <button 
+                            onClick={handleDeploy} disabled={deploying || !job.selected_resume || job.selected_resume === 'Default'}
+                            style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || job.selected_resume === 'Default') ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: (job.selected_resume === 'Default') ? 0.5 : 1 }}
+                        >
+                            {deploying ? "STAGING..." : deployed ? "ASSET STAGED!" : "STAGE FOR APPLICATION"}
+                            {!deploying && !deployed && <FileDown size={14} />}
+                            {deployed && <Check size={14} />}
+                        </button>
                     </div>
-                )}
+                </div>
             </div>
             
              {/* FOOTER ACTIONS */}

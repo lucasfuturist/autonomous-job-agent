@@ -8,7 +8,7 @@ from config import OLLAMA_MODEL, HEAVY_MODEL, MD_FOLDER, CORE_SCHEMA, BLACKLIST_
 
 class Brain:
     def __init__(self):
-        print(f"[BRAIN] Initializing JIT Resume Forge. Sniper Core: {HEAVY_MODEL}")
+        print(f"[BRAIN] Multi-Agent Core Online | Scout: {OLLAMA_MODEL} | Sniper: {HEAVY_MODEL}")
         self.lock = threading.Lock()
         self.feedback_file = "data/tactical_feedback.txt"
         self.master_data_path = "data/master_career_data.json"
@@ -74,7 +74,7 @@ class Brain:
         # 2. LOAD DYNAMIC RULES
         dynamic_rules = self._load_dynamic_rules()
 
-        # 3. RUTHLESS LLM EVALUATION VIA HEAVY MODEL
+        # 3. HIGH-SPEED LLM EVALUATION (THE SCOUT)
         prompt = f"""
         Role: Ruthless Technical Gatekeeper for a highly specialized engineer.
         Candidate TRUE Profile: Deep Tech Systems Engineer, embedded hardware, AI infrastructure, robotics, and NASA-funded materials science.
@@ -89,7 +89,7 @@ class Brain:
         
         RUTHLESS SCORING RUBRIC:
         - 0-2: AUTO-REJECT. Non-technical roles (Sales, HR, Content Creation, TikTok, Social Media, Healthcare Admin, Credentialing, Nursing, Trucking, generic clerical).
-        - 3-5: POOR FIT. Standard enterprise IT, Helpdesk, UI/UX design, generic business management, or "Enterprise Cloud Architect" roles that require 15+ years of corporate IT governance.
+        - 3-5: POOR FIT. Standard enterprise IT, Helpdesk, UI/UX design, generic business management, or "Enterprise Cloud Architect" roles.
         - 6-7: OKAY FIT. Pure software backend roles (Python/TypeScript) with no hardware or AI systems crossover.
         - 8-10: PERFECT FIT. AI Systems, LLM Orchestration, Robotics, Embedded C++, Edge AI, Data Engineering, or Hardware/Software integration.
         
@@ -97,14 +97,14 @@ class Brain:
         """
         with self.lock:
             try:
-                # ROUTED TO 70B MODEL
-                res = ollama.chat(model=HEAVY_MODEL, messages=[
+                # ROUTED TO SCOUT MODEL (Fast)
+                res = ollama.chat(model=OLLAMA_MODEL, messages=[
                     {'role': 'system', 'content': prompt},
                     {'role': 'user', 'content': f"Title: {job['title']}\nDesc: {job['description'][:2000]}"}
                 ], format='json')
                 return json.loads(res['message']['content'])
             except Exception as e: 
-                return {"score": 0, "reason": f"Brain Fault ({HEAVY_MODEL}): {e}"}
+                return {"score": 0, "reason": f"Brain Fault ({OLLAMA_MODEL}): {e}"}
 
     def build_jit_resume(self, job):
         master = self._load_master_data()
@@ -131,7 +131,7 @@ class Brain:
         approved_ids = []
         with self.lock:
             try:
-                # ROUTED TO 70B MODEL
+                # ROUTED TO SNIPER MODEL (Intelligent)
                 res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_bullets}], format='json')
                 raw_content = res['message']['content']
                 try:
@@ -173,7 +173,7 @@ class Brain:
         summary = "Dedicated Systems Engineer with a proven track record bridging software architecture, AI integration, and robust hardware automation."
         with self.lock:
             try:
-                # ROUTED TO 70B MODEL
+                # ROUTED TO SNIPER MODEL (Intelligent)
                 res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_summary}], format='json')
                 raw_content = res['message']['content']
                 try:

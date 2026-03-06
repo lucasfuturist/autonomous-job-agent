@@ -6,6 +6,7 @@ import os
 import traceback
 import threading
 import glob
+import shutil
 from config import PORT, MD_FOLDER
 
 # --- ROBUST IMPORT LOGIC ---
@@ -23,6 +24,7 @@ except Exception as e:
     traceback.print_exc()
 
 FEEDBACK_FILE = "data/tactical_feedback.txt"
+DEPLOY_FOLDER = "data/deployments"
 
 class CRMHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -153,6 +155,27 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     self.send_error(400)
                     
+            elif self.path == '/api/deploy':
+                data = json.loads(post_data)
+                resume_name = data.get('resume')
+                if resume_name:
+                    clean_name = os.path.basename(resume_name)
+                    src_path = os.path.join(MD_FOLDER, f"{clean_name}.md")
+                    
+                    if not os.path.exists(DEPLOY_FOLDER):
+                        os.makedirs(DEPLOY_FOLDER)
+                        
+                    dest_path = os.path.join(DEPLOY_FOLDER, f"{clean_name}.md")
+                    
+                    if os.path.exists(src_path):
+                        shutil.copy2(src_path, dest_path)
+                        print(f"[SERVER] Staged asset for deployment: {dest_path}")
+                        self._send_json({"success": True, "path": dest_path})
+                    else:
+                        self.send_error(404, "Source resume not found on disk")
+                else:
+                    self.send_error(400, "Missing resume parameter")
+                    
             else:
                 self.send_error(404)
         except Exception as e:
@@ -172,6 +195,9 @@ def start_server():
 
     if not os.path.exists("data"):
         os.makedirs("data")
+        
+    if not os.path.exists(DEPLOY_FOLDER):
+        os.makedirs(DEPLOY_FOLDER)
     
     if not os.path.exists(FEEDBACK_FILE):
         with open(FEEDBACK_FILE, "w") as f: f.write("")
