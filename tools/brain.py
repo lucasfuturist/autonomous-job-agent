@@ -4,11 +4,11 @@ import os
 import re
 import threading
 import random
-from config import OLLAMA_MODEL, MD_FOLDER, CORE_SCHEMA, BLACKLIST_KEYWORDS, USER_PREFERENCES
+from config import OLLAMA_MODEL, HEAVY_MODEL, MD_FOLDER, CORE_SCHEMA, BLACKLIST_KEYWORDS, USER_PREFERENCES
 
 class Brain:
     def __init__(self):
-        print("[BRAIN] Initializing JIT Resume Forge...")
+        print(f"[BRAIN] Initializing JIT Resume Forge. Sniper Core: {HEAVY_MODEL}")
         self.lock = threading.Lock()
         self.feedback_file = "data/tactical_feedback.txt"
         self.master_data_path = "data/master_career_data.json"
@@ -74,77 +74,119 @@ class Brain:
         # 2. LOAD DYNAMIC RULES
         dynamic_rules = self._load_dynamic_rules()
 
-        # 3. LLM EVALUATION WITH PREFERENCES & DYNAMIC RULES
+        # 3. RUTHLESS LLM EVALUATION VIA HEAVY MODEL
         prompt = f"""
-        Role: Career Strategist.
-        Task: Score job 1-10 for a versatile Software/Hardware Engineer.
+        Role: Ruthless Technical Gatekeeper for a highly specialized engineer.
+        Candidate TRUE Profile: Deep Tech Systems Engineer, embedded hardware, AI infrastructure, robotics, and NASA-funded materials science.
+        
+        Task: Score the following job (1-10) based on fit for this specific candidate.
         
         BASE PREFERENCES:
         {USER_PREFERENCES}
 
-        DYNAMIC CONSTRAINTS (HIGHEST PRIORITY):
+        DYNAMIC CONSTRAINTS:
         {dynamic_rules}
         
-        SCORING RUBRIC:
-        - 0: BLACKLIST/REJECT (Matches Negative Constraints).
-        - 9-10: Perfect Match. High Agency, AI/Robotics, Founding Role.
-        - 7-8: Good Match. Strong Software Engineering, Data Engineering, or Hardware roles.
-        - 5-6: Decent. Generic Tech roles (Web Dev, QA) or "Senior" roles that are reachable.
-        - 1-4: Reject. Sales, HR, Nursing, Truck Driving, or completely non-technical.
+        RUTHLESS SCORING RUBRIC:
+        - 0-2: AUTO-REJECT. Non-technical roles (Sales, HR, Content Creation, TikTok, Social Media, Healthcare Admin, Credentialing, Nursing, Trucking, generic clerical).
+        - 3-5: POOR FIT. Standard enterprise IT, Helpdesk, UI/UX design, generic business management, or "Enterprise Cloud Architect" roles that require 15+ years of corporate IT governance.
+        - 6-7: OKAY FIT. Pure software backend roles (Python/TypeScript) with no hardware or AI systems crossover.
+        - 8-10: PERFECT FIT. AI Systems, LLM Orchestration, Robotics, Embedded C++, Edge AI, Data Engineering, or Hardware/Software integration.
         
-        Output JSON: {{"score": int, "reason": "Short justification"}}
+        Output ONLY valid JSON: {{"score": int, "reason": "Short, ruthless justification"}}
         """
         with self.lock:
             try:
-                res = ollama.chat(model=OLLAMA_MODEL, messages=[
+                # ROUTED TO 70B MODEL
+                res = ollama.chat(model=HEAVY_MODEL, messages=[
                     {'role': 'system', 'content': prompt},
                     {'role': 'user', 'content': f"Title: {job['title']}\nDesc: {job['description'][:2000]}"}
                 ], format='json')
                 return json.loads(res['message']['content'])
             except Exception as e: 
-                return {"score": 0, "reason": f"Brain Fault: {e}"}
+                return {"score": 0, "reason": f"Brain Fault ({HEAVY_MODEL}): {e}"}
 
     def build_jit_resume(self, job):
         master = self._load_master_data()
         if not master:
             return "Default", None
 
-        job_desc = str(job.get('description', ''))[:3000]
+        job_desc = str(job.get('description', ''))[:2000]
         job_title = str(job.get('title', ''))
         company = str(job.get('company', ''))
         
-        # 1. Batch extraction of relevant bullets
+        # 1. The Indestructible Sorter (Filter bullets based on relevance)
         bullet_catalog = {}
-        prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nCandidate Experience Bullets:\n"
+        prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nTask: Select the 5 to 8 most highly relevant bullet IDs from the candidate's experience that prove they can do this specific job.\n\nCandidate Bullets:\n"
         
+        fallback_ids = []
         for exp in master.get('experience', []):
-            for b in exp.get('standardized_bullets', []):
+            for i, b in enumerate(exp.get('standardized_bullets', [])):
                 bullet_catalog[b['id']] = b['text']
-                prompt_bullets += f"- ID: {b['id']} | {b['text']}\n"
+                prompt_bullets += f"- {b['id']}: {b['text']}\n"
+                if i < 2: fallback_ids.append(b['id'])
                 
-        prompt_bullets += "\nSelect the 5 to 7 most highly relevant bullet IDs for this specific job. Output ONLY valid JSON: {\"selected_ids\": [\"id1\", \"id2\"]}"
+        prompt_bullets += "\nOutput EXACTLY this JSON format and nothing else: {\"selected_ids\": [\"exp_ez_1\", \"exp_stealth_2\"]}"
         
-        selected_ids = []
+        approved_ids = []
         with self.lock:
             try:
-                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt_bullets}], format='json')
-                data = json.loads(res['message']['content'])
-                selected_ids = data.get('selected_ids', [])
+                # ROUTED TO 70B MODEL
+                res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_bullets}], format='json')
+                raw_content = res['message']['content']
+                try:
+                    data = json.loads(raw_content)
+                    if "selected_ids" in data:
+                        approved_ids = data["selected_ids"]
+                    else:
+                        approved_ids = [k for k, v in data.items() if v is True]
+                except json.JSONDecodeError:
+                    print(f"[BRAIN] JSON parse failed, deploying Regex Extraction...")
+                    approved_ids = list(set(re.findall(r'exp_[a-zA-Z0-9]+_\d+', raw_content)))
             except Exception as e:
-                print(f"[BRAIN] JIT Bullet Extraction Failed: {e}")
-                selected_ids = list(bullet_catalog.keys())[:5]
+                print(f"[BRAIN] Bullet Extractor API Failed: {e}")
                 
-        # 2. Executive Summary Synthesis
-        prompt_summary = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nWrite a punchy, 3-sentence professional summary for the candidate bridging their background to this specific role's mission. Output ONLY valid JSON: {{\"summary\": \"...\"}}"
+        valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
+        
+        if not valid_approved_ids:
+            valid_approved_ids = fallback_ids
+
+        # 2. Grounded Executive Summary Synthesis
+        actual_experience_text = "\n".join([f"- {bullet_catalog[i]}" for i in valid_approved_ids[:5]])
+        
+        prompt_summary = f"""
+        Role: Elite Resume Writer.
+        Job Title: {job_title}
+        Company: {company}
+        Job Description: {job_desc[:1000]}
+
+        Candidate's TRUE Profile: Systems Engineer with a background in Python, C++, Edge AI, Robotics Integration, and NASA-funded Materials Science.
+        Candidate's ACTUAL Approved Experience for this role:
+        {actual_experience_text}
+
+        Task: Write a punchy, 3-sentence professional summary bridging the candidate's ACTUAL background with this specific role's mission.
+        CRITICAL RULE: DO NOT shape-shift the candidate. DO NOT invent past titles (e.g., do not call them an 'Enterprise Cloud Architect' or 'TikTok Creator' if they are not one). Frame their actual systems/hardware/AI background as the perfect asset for the company's needs.
+        
+        Output ONLY valid JSON: {{"summary": "..."}}
+        """
         
         summary = "Dedicated Systems Engineer with a proven track record bridging software architecture, AI integration, and robust hardware automation."
         with self.lock:
             try:
-                res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt_summary}], format='json')
-                data = json.loads(res['message']['content'])
-                summary = data.get('summary', summary)
+                # ROUTED TO 70B MODEL
+                res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_summary}], format='json')
+                raw_content = res['message']['content']
+                try:
+                    data = json.loads(raw_content)
+                    summary = data.get('summary', summary)
+                except json.JSONDecodeError:
+                    match = re.search(r'"summary"\s*:\s*"(.*?)"', raw_content, re.IGNORECASE | re.DOTALL)
+                    if match:
+                        summary = match.group(1)
+                    else:
+                        summary = raw_content.strip('{} \n\r"')
             except Exception as e:
-                print(f"[BRAIN] JIT Summary Extraction Failed: {e}")
+                print(f"[BRAIN] Grounded Summary Extraction Failed: {e}")
 
         # 3. Assemble Markdown Payload
         clean_company = re.sub(r'[^a-zA-Z0-9]', '', company)
@@ -154,7 +196,9 @@ class Brain:
         md_content = f"# Lucas Mougeot\n\n## Professional Summary\n{summary}\n\n## Relevant Experience\n\n"
         
         for exp in master.get('experience', []):
-            role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in selected_ids]
+            role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
+            role_bullets = role_bullets[:4] 
+            
             if role_bullets:
                 md_content += f"### {exp['title']} at {exp['company']} ({exp.get('dates', '')})\n"
                 for b in role_bullets:
@@ -187,8 +231,6 @@ class Brain:
         Your Search Universe Sample: {sample_universe}
         
         Suggest 2 search terms that would find 'neighboring' roles.
-        If it's a software role, suggest a hardware/systems equivalent.
-        If it's a robotics role, suggest an AI infrastructure equivalent.
         
         Output JSON: {{"terms": ["term1", "term2"]}}
         """

@@ -1,5 +1,6 @@
 # config.py
-OLLAMA_MODEL = "qwen:14b"
+OLLAMA_MODEL = "qwen:14b"             # The Scout (Fast brainstorming)
+HEAVY_MODEL = "llama3.1:70b"          # The Sniper (Deep reasoning, utilizes Dual 4090s)
 PORT = 8050
 
 # --- PATHS ---
