@@ -185,6 +185,9 @@ def status_loop():
 if __name__ == "__main__":
     print("=== AUTONOMOUS AGENT BOOT SEQUENCE ===")
     
+    # --- FORCE INITIAL LOG WRITE ---
+    mem.set_system_activity("SYSTEM", "Booting...")
+    
     threading.Thread(target=start_server, daemon=True).start()
     threading.Thread(target=status_loop, daemon=True).start()
     

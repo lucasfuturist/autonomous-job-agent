@@ -11,19 +11,32 @@ function Layout({ children }) {
 
   // Poll Agent State & Activity
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchState = () => {
         fetch('/api/agent_state')
             .then(res => res.json())
             .then(data => {
+                if (!isMounted) return;
                 setIsActive(data.active);
-                if (data.activity) setActivityLog(data.activity);
+                
+                if (data.activity) {
+                    setActivityLog(data.activity);
+                } else {
+                    // Fallback if backend is sending old format
+                    setActivityLog({ source: "SYSTEM", message: "Waiting for signal..." });
+                }
             })
-            .catch(() => {});
+            .catch((e) => {
+                if (!isMounted) return;
+                console.error("Poll failed:", e);
+                setActivityLog({ source: "ERROR", message: "Backend Disconnected" });
+            });
     };
 
     fetchState();
     const interval = setInterval(fetchState, 2000);
-    return () => clearInterval(interval);
+    return () => { isMounted = false; clearInterval(interval); };
   }, []);
 
   // Toggle Agent State
@@ -112,7 +125,7 @@ function Layout({ children }) {
         </div>
 
         <div style={{ fontSize: '10px', color: '#444' }}>
-          v2.3.0 // UX POLISH
+          v2.3.2 // UX POLISH
         </div>
       </div>
 

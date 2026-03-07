@@ -21,7 +21,27 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
   }, [job.salary_base_min, job.salary_base_max]);
 
   const timeAgo = useMemo(() => {
-    const seconds = Math.floor((new Date() - new Date(job.found_at)) / 1000);
+    if (!job.found_at) return "";
+    
+    // Parse timestamp defensively. 
+    // SQLite default CURRENT_TIMESTAMP is UTC 'YYYY-MM-DD HH:MM:SS'. 
+    // Appending 'Z' ensures JS treats it as UTC, preventing timezone drift.
+    let dateStr = job.found_at;
+    if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+        dateStr += 'Z';
+    }
+    
+    const now = new Date();
+    const found = new Date(dateStr);
+    
+    // Fallback if date parsing fails
+    if (isNaN(found.getTime())) return "";
+
+    const seconds = Math.floor((now - found) / 1000);
+    
+    // Handle future dates (clock skew)
+    if (seconds < 0) return "just now";
+
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + "y ago";
     interval = seconds / 2592000;
@@ -32,6 +52,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
     if (interval > 1) return Math.floor(interval) + "h ago";
     interval = seconds / 60;
     if (interval > 1) return Math.floor(interval) + "m ago";
+    
     return Math.floor(seconds) + "s ago";
   }, [job.found_at]);
 
@@ -176,5 +197,6 @@ export default React.memo(JobCard, (prev, next) => {
            prev.job.status === next.job.status && 
            prev.job.starred === next.job.starred && 
            prev.job.score === next.job.score && 
-           prev.job.salary_base_min === next.job.salary_base_min;
+           prev.job.salary_base_min === next.job.salary_base_min &&
+           prev.job.found_at === next.job.found_at;
 });
