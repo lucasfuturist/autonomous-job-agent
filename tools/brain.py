@@ -41,7 +41,7 @@ class Brain:
             return "Error loading rules."
 
     def _normalize_keys(self, data):
-        """Fixes malformed JSON keys from smaller LLMs (e.g. 'tech_ stack_ core' -> 'tech_stack_core')"""
+        """Fixes malformed JSON keys from smaller LLMs."""
         if not isinstance(data, dict):
             return data
         
@@ -98,55 +98,12 @@ class Brain:
             if re.search(pattern, title_lower):
                 return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Role '{pattern}'"}
 
-        dynamic_rules = self._load_dynamic_rules()
-
-        # --- PASS 1: SCORING (FIT CHECK) ---
-        # Keep this lightweight (OLLAMA_MODEL) for speed
-        score_data = {"score": 0, "reason": "Default"}
-        prompt_score = f"""
-        Role: Hostile Technical Gatekeeper.
-        
-        CANDIDATE PROFILE:
-        - Deep Tech Systems Engineer (Python, C++, Robotics, AI Infrastructure).
-        - Wants: Founding Engineer, AI Platform, Robotics Middleware, Hard Tech.
-        
-        ANTI-PERSONA (IMMEDIATE REJECT):
-        - NOT a Doctor, Nurse, or Medical Professional.
-        - NOT a Civil Engineer (Construction, HVAC, Concrete).
-        - NOT a Web Developer (Wordpress, Shopify).
-        - NOT IT Support (Helpdesk, SysAdmin).
-        
-        JOB TO EVALUATE:
-        Title: {job['title']}
-        Company: {job['company']}
-        Description: {job['description'][:2000]}
-        
-        SCORING RUBRIC (0-10):
-        - 0-2: Medical/Trades/Sales/IT Support.
-        - 3-5: Generic Web Dev or Business Analyst.
-        - 8-10: Hard Match (Robotics, AI Infra, C++/Python Systems).
-        
-        DYNAMIC RULES: {USER_PREFERENCES} {dynamic_rules}
-        
-        Output JSON: {{"score": int, "reason": "Short justification"}}
-        """
-        
-        with self.lock:
-            try:
-                res1 = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt_score}], format='json')
-                score_data = json.loads(res1['message']['content'])
-            except Exception as e:
-                return {"score": 0, "reason": f"Scoring Fault: {e}"}
-
-        # If the job is junk, don't waste time (or heavy compute) extracting data
-        if score_data.get('score', 0) < 2:
-            return score_data
-
-        # --- PASS 2: DATA EXTRACTION (HEAVY MODEL) ---
-        # Use HEAVY_MODEL here for precision JSON extraction
+        # --- DATA EXTRACTION & SCORING (ONE PASS, HEAVY MODEL) ---
+        # The Hostile Gatekeeper step has been removed. 
+        # The LLM unconditionally parses the data and returns a fair technical score.
         prompt_extract = f"""
         Role: Precise Data Extraction Engine.
-        Task: Extract technical metadata from the text below.
+        Task: Analyze the job description and extract technical metadata.
         
         SOURCE TEXT:
         Title: {job['title']}
@@ -155,11 +112,12 @@ class Brain:
         
         RULES:
         1. EXTRACT ONLY what is explicitly stated in the text.
-        2. DO NOT infer skills not listed.
-        3. DO NOT include "reasoning" or "comments" in the JSON. Output RAW JSON only.
-        4. If a field is missing, return null (for ints) or [] (for lists).
+        2. DO NOT include "reasoning" or "comments" as JSON keys. Output RAW JSON only.
+        3. If a field is missing, return null (for ints) or [] (for lists).
         
         SCHEMA:
+        - score: int (Rate technical relevance to Python/C++/AI/Robotics from 0 to 10. 0=Retail/Medical, 5=Generic IT/Software, 10=AI/Robotics)
+        - reason: "str" (One sentence objective summary of the role)
         - salary_base_min: int or null
         - salary_base_max: int or null
         - work_mode: "Remote", "Hybrid", "Onsite", "Unknown"
@@ -171,34 +129,34 @@ class Brain:
         - yoe_actual: int (Minimum years required)
         - red_flags: list[str] (Toxic traits, unpaid, etc.)
 
-        Output JSON:
+        Output JSON Example:
         {{
+            "score": 7,
+            "reason": "Mid-level backend software engineer working on cloud infrastructure.",
             "salary_base_min": 100000,
             "salary_base_max": 150000,
             "work_mode": "Hybrid",
             "travel_pct_max": 10,
             "clearance_required": "None",
             "itar_ear_restricted": false,
-            "tech_stack_core": ["Python", "AWS"],
+            "tech_stack_core": ["Python", "AWS", "Docker"],
             "hardware_physical_tools": [],
             "yoe_actual": 5,
             "red_flags": []
         }}
         """
         
-        extract_data = {}
         with self.lock:
             try:
-                # SWITCHED TO HEAVY_MODEL FOR STABILITY
-                res2 = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_extract}], format='json')
-                raw_extract = json.loads(res2['message']['content'])
-                extract_data = self._normalize_keys(raw_extract)
+                res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_extract}], format='json')
+                raw_extract = json.loads(res['message']['content'])
+                return self._normalize_keys(raw_extract)
             except Exception as e:
-                print(f"[BRAIN] Extraction Fault ({HEAVY_MODEL}): {e}")
-                
-        # Merge results
-        final_result = {**score_data, **extract_data}
-        return final_result
+                print(f"[BRAIN] Extraction Fault ({HEAVY_MODEL}): {repr(e)}")
+                return {
+                    "score": 0, 
+                    "reason": f"Extraction Fault: {repr(e)}"
+                }
 
     def build_jit_resume(self, job):
         master = self._load_master_data()
@@ -241,21 +199,15 @@ class Brain:
         valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
         
         # --- FIX: TOTAL TIMELINE GUARANTEE ---
-        # Ensure EVERY job in the master JSON is represented by at least 2 bullets
-        # to prevent the LLM from truncating years of overall experience.
         guaranteed_ids = []
         for exp in master.get('experience', []):
             job_bullet_ids = [b['id'] for b in exp.get('standardized_bullets', [])]
-            
-            # Count how many bullets for this specific job the LLM actually kept
             kept_count = sum(1 for j_id in job_bullet_ids if j_id in valid_approved_ids)
-            
             if kept_count < 2:
                 needed = 2 - kept_count
                 missing_ids = [j_id for j_id in job_bullet_ids if j_id not in valid_approved_ids]
                 guaranteed_ids.extend(missing_ids[:needed])
                 
-        # Merge the forced IDs into the approved list
         if guaranteed_ids:
             print(f"[BRAIN] Anti-Truncation Triggered: Forcing {len(guaranteed_ids)} missing bullets into {company}...")
             valid_approved_ids.extend(guaranteed_ids)
@@ -281,10 +233,10 @@ class Brain:
         3. **summary**: A punchy, 3-4 sentence professional summary.
 
         ABSOLUTE ZERO-HALLUCINATION RULES FOR SUMMARY:
-        - ZERO DOMAIN INFERENCE: You are FORBIDDEN from claiming the candidate has experience in {company}'s specific domain (e.g., "Ion Traps", "Human-Machine Teaming", "Aerospace Logistics") UNLESS those exact words appear in the Candidate's ACTUAL Experience text above.
-        - DO NOT SHAPE-SHIFT: Do not state the candidate is an "Expert in [Target Job Title]" if they have never held that title. Anchor the identity in their actual background.
-        - FACT-BASED ALIGNMENT: State ONLY the hardware, software, and systems the candidate has factually built. Frame those TRUE skills as the reason they are highly capable of solving {company}'s engineering problems.
-        - NARRATIVE PROSE: Write in flowing, professional resume prose using implied first-person. DO NOT start sentences with raw, floating verbs like "Architect and implement." Use connecting phrases like "Systems Engineer with a proven track record of architecting..." or "Leverages deep expertise in X to build Y."
+        - ZERO DOMAIN INFERENCE: You are FORBIDDEN from claiming the candidate has experience in {company}'s specific domain.
+        - DO NOT SHAPE-SHIFT: Do not state the candidate is an "Expert in [Target Job Title]" if they have never held that title.
+        - FACT-BASED ALIGNMENT: State ONLY the hardware, software, and systems the candidate has factually built.
+        - NARRATIVE PROSE: Write in flowing, professional resume prose using implied first-person.
         - ANTI-PATTERNS: Do NOT use "Seasoned", "Passionate", "Results-oriented", "I am a...", or generic fluff.
 
         Output ONLY valid JSON: {{ "target_title": "...", "core_competency": "...", "summary": "..." }}
@@ -317,14 +269,14 @@ class Brain:
         TASK: Filter the Candidate's Master Skills JSON. Keep ONLY the skills highly relevant to this specific job.
         
         CRITICAL RULES:
-        1. RUTHLESS PRUNING: Drop completely irrelevant skills (e.g., remove "SEM/EDS" and "HiPIMS" if it's a pure software role; remove "React" if it's a pure hardware role).
+        1. RUTHLESS PRUNING: Drop completely irrelevant skills.
         2. NO HALLUCINATION: DO NOT invent new skills. Only use the exact strings present in the Master JSON.
         3. MAXIMUM 15 SKILLS: Keep the list punchy, dense, and hyper-targeted.
         
         Output ONLY valid JSON matching the original category structure.
         """
         
-        dynamic_skills = master.get('skills', {}) # Fallback
+        dynamic_skills = master.get('skills', {})
         with self.lock:
             try:
                 res_skills = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_skills}], format='json')
@@ -360,7 +312,6 @@ core_competency: "{strategy['core_competency']}"
 
         for exp in experiences:
             role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
-            # Ensure we respect the overall length limit, but we don't truncate completely
             role_bullets = role_bullets[:12] 
             
             if role_bullets:

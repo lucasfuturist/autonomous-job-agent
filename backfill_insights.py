@@ -15,8 +15,6 @@ def run_backfill(mode):
     conn = mem._get_conn()
     conn.row_factory = sqlite3.Row
     
-    # We look for jobs where the new schema fields are NULL.
-    # We use 'tech_stack_core' as the proxy for "unprocessed".
     print("[BACKFILL] Querying database for unprocessed targets...")
     cursor = conn.execute("""
         SELECT * FROM jobs 
@@ -54,21 +52,13 @@ def run_backfill(mode):
         print(f"\n[{i+1}/{len(process_queue)}] Analyzing: {job['company']} - {job['title']}")
         
         try:
-            # A. Re-evaluate using the upgraded Brain prompt
+            # A. Evaluate using the single-pass extraction prompt
             analysis = brain.evaluate(job)
             
-            # B. Check for valid extraction
-            score = analysis.get('score', 0)
+            # B. ALWAYS print the full JSON payload for debugging
+            print(json.dumps(analysis, indent=2))
             
-            # --- FULL DEBUG OUTPUT ---
-            if mode == 'test':
-                print(json.dumps(analysis, indent=2))
-            else:
-                # Concise output for Final mode
-                salary = f"${analysis.get('salary_base_min', 'N/A')}-{analysis.get('salary_base_max', 'N/A')}"
-                work_mode = analysis.get('work_mode', 'Unknown')
-                stack_len = len(analysis.get('tech_stack_core', []))
-                print(f"    -> Score: {score}/10 | Pay: {salary} | Mode: {work_mode} | Stack Items: {stack_len}")
+            score = analysis.get('score', 0)
 
             # C. Persist (Final Mode Only)
             if mode == 'final':
@@ -81,14 +71,17 @@ def run_backfill(mode):
                     resume=existing_resume,
                     analysis_data=analysis
                 )
+                print(f"    -> [SAVED] {job['company']} updated in Database.")
                 success_count += 1
                 
-        except Exception as e:
-            print(f"    -> [ERROR] Extraction failed: {e}")
+        except BaseException as e:
+            # Catch BaseException and use repr(e) to expose hidden HTTP timeouts
+            print(f"    -> [CRITICAL ERROR] Extraction failed for {job['company']}: {repr(e)}")
+            print("    -> Skipping to next job to keep batch alive...")
         
-        # Polite delay for local LLM thermal management
+        # Polite delay for local LLM thermal management (allow VRAM to flush)
         if mode == 'final':
-            time.sleep(1.0) 
+            time.sleep(2.0) 
 
     print(f"\n=== BACKFILL COMPLETE ===")
     if mode == 'test':
