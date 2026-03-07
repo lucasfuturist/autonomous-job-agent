@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus, Users, ScanSearch } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
@@ -13,6 +13,10 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   // EDIT MODE STATE
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
+  
+  // RECRUITER STATE
+  const [recruiters, setRecruiters] = useState([]);
+  const [loadingRecruiters, setLoadingRecruiters] = useState(false);
   
   const containerRef = useRef(null);
   const [leftWidth, setLeftWidth] = useState(40);
@@ -72,7 +76,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [job, onClose, onNext, onPrev, onToggleStar, isStarred, handleTriageAction]);
 
-  // --- FETCH RESUME ---
+  // --- FETCH RESUME & RECRUITERS ---
   useEffect(() => {
     if (hasResume) {
         setResumeContent("Loading...");
@@ -83,6 +87,19 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
             .catch(err => setResumeContent("Failed to load resume."));
     } else {
         setResumeContent(null);
+    }
+    
+    // FETCH RECRUITERS
+    if (job?.company) {
+        setLoadingRecruiters(true);
+        setRecruiters([]);
+        fetch(`/api/recruiters?company=${encodeURIComponent(job.company)}`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.recruiters) setRecruiters(data.recruiters);
+            })
+            .catch(e => console.error(e))
+            .finally(() => setLoadingRecruiters(false));
     }
   }, [job, hasResume]);
 
@@ -140,6 +157,13 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
           console.error(e);
           alert("Error saving resume.");
       }
+  };
+
+  const handleRecruiterRecon = (e) => {
+    if (e) e.stopPropagation();
+    const query = `site:linkedin.com/in intitle:("recruiter" OR "talent" OR "acquisition") "${job.company}"`;
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    window.open(url, '_blank');
   };
 
   if (!job) return null;
@@ -399,6 +423,27 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                     </div>
                 )}
 
+                {/* RECRUITER RECON */}
+                <div style={{ background: '#111', border: '1px solid #222', padding: '10px', borderRadius: '4px' }}>
+                    <div style={{ fontSize: '10px', color: '#888', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Users size={12} /> RECRUITER RECON
+                    </div>
+                    {loadingRecruiters ? (
+                        <div style={{ fontSize: '11px', color: '#666' }}>Scanning LinkedIn...</div>
+                    ) : recruiters.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {recruiters.map((rec, i) => (
+                                <a key={i} href={rec.url} target="_blank" style={{ display: 'block', textDecoration: 'none', background: '#222', padding: '6px', borderRadius: '3px', border: '1px solid #333' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>{rec.name}</div>
+                                    <div style={{ fontSize: '10px', color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rec.title}</div>
+                                </a>
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: '11px', color: '#444' }}>No public profiles detected.</div>
+                    )}
+                </div>
+
                 <div style={{ fontSize: '14px', lineHeight: '1.5', color: '#eee', whiteSpace: 'pre-wrap', borderTop: '1px solid #222', paddingTop: '10px' }}>
                     <div style={{ fontSize: '10px', color: '#666', marginBottom: '5px' }}>SCORING RATIONALE</div>
                     {formatResume(reasonText)}
@@ -427,6 +472,9 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                     </a>
                     <button onClick={handleCopyUrl} style={{ background: urlCopied ? 'var(--accent)' : '#111', border: '1px solid #444', color: urlCopied ? '#000' : '#aaa', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}>
                         {urlCopied ? "COPIED!" : "COPY URL"} {urlCopied ? <Check size={14} /> : <Link size={14} />}
+                    </button>
+                    <button onClick={handleRecruiterRecon} style={{ background: '#111', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                        X-RAY SCAN <ScanSearch size={14} />
                     </button>
                 </div>
 
@@ -531,4 +579,4 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       </div>
     </div>
   );
-} 
+}

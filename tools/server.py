@@ -8,6 +8,14 @@ import threading
 import glob
 import shutil
 import re
+import urllib.parse
+
+# --- CRITICAL PATH FIX: MUST BE BEFORE LOCAL IMPORTS ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 import ollama 
 from config import PORT, MD_FOLDER, HEAVY_MODEL
 
@@ -19,10 +27,12 @@ except ImportError:
     print("[SERVER] ⚠️  PDF libs missing. Run: 'pip install markdown2 xhtml2pdf'")
     PDF_ENABLED = False
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.append(parent_dir)
+try:
+    from duckduckgo_search import DDGS
+    DDGS_AVAILABLE = True
+except ImportError:
+    print("[SERVER] ⚠️  duckduckgo-search missing. Run: 'pip install duckduckgo-search'")
+    DDGS_AVAILABLE = False
 
 try:
     from tools.memory import Memory
@@ -172,6 +182,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_logs()
             elif self.path.startswith('/api/resume'): 
                 self._handle_get_resume()
+            elif self.path.startswith('/api/recruiters'):
+                self._handle_get_recruiters()
             elif self.path.startswith('/api/agent_state'): 
                 # --- UPDATED TO INCLUDE LIVE ACTIVITY LOG ---
                 status = {
@@ -231,6 +243,42 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 with open(matches[0], "r", encoding="utf-8") as f: content = f.read()
             else: content = "# Resume Not Found on Disk"
         self._send_json({"content": content})
+
+    def _handle_get_recruiters(self):
+        if "?" not in self.path:
+            self.send_error(400, "Missing query parameters")
+            return
+            
+        query_components = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        company = query_components.get('company', [''])[0]
+        
+        if not company:
+            self.send_error(400, "Missing company parameter")
+            return
+
+        results = []
+        if DDGS_AVAILABLE:
+            try:
+                # Targeted X-Ray search
+                search_query = f'site:linkedin.com/in "recruiter" OR "talent acquisition" "{company}"'
+                print(f"[SERVER] performing recon scan for: {company}")
+                
+                with DDGS() as ddgs:
+                    # Fetching 5 results
+                    ddgs_results = ddgs.text(search_query, max_results=5)
+                    if ddgs_results:
+                        for r in ddgs_results:
+                            results.append({
+                                "name": r.get('title', 'Unknown Profile').split('|')[0].strip().split('-')[0].strip(),
+                                "title": r.get('body', 'No snippet available')[:100] + "...",
+                                "url": r.get('href', '#')
+                            })
+            except Exception as e:
+                print(f"[SERVER] Recruiter scan error: {e}")
+        else:
+             print("[SERVER] DDGS not available. Returning empty list.")
+
+        self._send_json({"recruiters": results})
 
     def _handle_save_resume(self, data):
         name = data.get('name')

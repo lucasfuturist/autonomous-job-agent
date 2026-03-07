@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, DollarSign, ShieldAlert, Cpu, Globe, Briefcase, Clock } from 'lucide-react';
+import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, DollarSign, ShieldAlert, Cpu, Globe, Briefcase, Clock, ScanSearch } from 'lucide-react';
 
 const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }) => {
   const [showScript, setShowScript] = useState(false);
@@ -63,6 +63,13 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
     navigator.clipboard.writeText(scriptContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRecruiterRecon = (e) => {
+    e.stopPropagation();
+    const query = `site:linkedin.com/in intitle:("recruiter" OR "talent" OR "acquisition") "${job.company}"`;
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    window.open(url, '_blank');
   };
 
   const stopProp = (e) => e.stopPropagation();
@@ -157,6 +164,10 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
         <a href={job.url} target="_blank" style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}>
           <ExternalLink size={12} />
         </a>
+
+        <button onClick={handleRecruiterRecon} title="Recruiter Recon (Google)" style={{ flex: 1, background: '#111', border: '1px solid var(--accent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px', transition: 'all 0.2s' }}>
+           <ScanSearch size={12} />
+        </button>
 
         {scriptContent && (
           <button onClick={handleCopy} style={{ flex: 1, background: copied ? 'var(--accent)' : '#111', color: copied ? '#000' : 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px', transition: 'all 0.2s' }}>
