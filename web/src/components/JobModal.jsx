@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
-  const [resumeContent, setResumeContent] = useState("Loading resume...");
+  const [resumeContent, setResumeContent] = useState("Loading...");
   
   const [deploying, setDeploying] = useState(false);
   const [deployed, setDeployed] = useState(false);
@@ -19,6 +19,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   const [centerWidth, setCenterWidth] = useState(30);
 
   const isStarred = job?.starred === 1 || job?.starred === true;
+  const hasResume = job?.selected_resume && job.selected_resume !== "" && job.selected_resume !== "None";
 
   // --- ENRICHED DATA PARSING ---
   const techStack = useMemo(() => {
@@ -73,15 +74,17 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
   // --- FETCH RESUME ---
   useEffect(() => {
-    if (job?.selected_resume) {
+    if (hasResume) {
         setResumeContent("Loading...");
-        setIsEditing(false); // Reset edit mode on job change
+        setIsEditing(false); 
         fetch(`/api/resume?name=${encodeURIComponent(job.selected_resume)}`)
             .then(res => res.json())
             .then(data => setResumeContent(data.content))
             .catch(err => setResumeContent("Failed to load resume."));
+    } else {
+        setResumeContent(null);
     }
-  }, [job]);
+  }, [job, hasResume]);
 
   // --- REGENERATE SUMMARY HANDLER ---
   const handleRegenerateSummary = async () => {
@@ -239,12 +242,27 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     return <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: job.distance <= 30 ? 'var(--accent)' : 'inherit' }}><Navigation size={12}/> {Math.round(job.distance)} mi from Boston</div>;
   };
 
+  const renderSkeletonResume = () => (
+    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }} className="fade-in">
+       <div className="skeleton" style={{ height: '28px', width: '50%', marginBottom: '10px' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '30%', marginBottom: '25px' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '100%' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '95%' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '90%' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '80%', marginBottom: '30px' }}></div>
+       <div className="skeleton" style={{ height: '18px', width: '40%', marginBottom: '10px' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '100%' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '85%' }}></div>
+       <div className="skeleton" style={{ height: '12px', width: '90%' }}></div>
+    </div>
+  );
+
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0, 0, 0, 0.95)', backdropFilter: 'blur(5px)',
       zIndex: 1000, display: 'flex', flexDirection: 'column', padding: '20px'
-    }} onClick={onClose}>
+    }} onClick={onClose} className="fade-in">
       
       {/* --- TOP BAR --- */}
       <div style={{ 
@@ -272,22 +290,22 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: statusColor, marginRight: '10px' }}>{job.score}</div>
             
-            <button onClick={() => onToggleStar(job.id, !isStarred)} style={{ background: 'transparent', border: '1px solid #333', padding: '8px', cursor: 'pointer', color: isStarred ? 'gold' : '#666', borderRadius: '4px' }} title="Star (S)">
+            <button onClick={() => onToggleStar(job.id, !isStarred)} style={{ background: 'transparent', border: '1px solid #333', padding: '8px', cursor: 'pointer', color: isStarred ? 'gold' : '#666', borderRadius: '4px', transition: 'color 0.2s' }} title="Star (S)">
                 <Star size={18} fill={isStarred ? "gold" : "none"} />
             </button>
             
             {/* QUEUE CONTROLS */}
             <div style={{ display: 'flex', background: '#111', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', marginLeft: '10px' }}>
-                <button onClick={onPrev} disabled={!onPrev} style={{ background: 'transparent', border: 'none', color: '#fff', padding: '8px', cursor: onPrev ? 'pointer' : 'not-allowed', opacity: onPrev ? 1 : 0.3 }} title="Previous (Left Arrow)">
+                <button onClick={onPrev} disabled={!onPrev} style={{ background: 'transparent', border: 'none', color: '#fff', padding: '8px', cursor: onPrev ? 'pointer' : 'not-allowed', opacity: onPrev ? 1 : 0.3, transition: 'opacity 0.2s' }} title="Previous (Left Arrow)">
                     <ChevronLeft size={18} />
                 </button>
                 <div style={{ width: '1px', background: '#333' }}></div>
-                <button onClick={onNext} disabled={!onNext} style={{ background: 'transparent', border: 'none', color: '#fff', padding: '8px', cursor: onNext ? 'pointer' : 'not-allowed', opacity: onNext ? 1 : 0.3 }} title="Next (Right Arrow)">
+                <button onClick={onNext} disabled={!onNext} style={{ background: 'transparent', border: 'none', color: '#fff', padding: '8px', cursor: onNext ? 'pointer' : 'not-allowed', opacity: onNext ? 1 : 0.3, transition: 'opacity 0.2s' }} title="Next (Right Arrow)">
                     <ChevronRight size={18} />
                 </button>
             </div>
 
-            <button onClick={onClose} style={{ background: '#222', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }} title="Close (ESC)">
+            <button onClick={onClose} style={{ background: '#222', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px', transition: 'background 0.2s' }} title="Close (ESC)">
                 ESC
             </button>
           </div>
@@ -389,10 +407,11 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ padding: '10px', background: '#111' }}>
                         <button 
-                            onClick={handleDeploy} disabled={deploying || !job.selected_resume || job.selected_resume === 'Default' || isEditing}
-                            style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || job.selected_resume === 'Default' || isEditing) ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: (job.selected_resume === 'Default' || isEditing) ? 0.5 : 1 }}
+                            onClick={handleDeploy} disabled={deploying || !hasResume || isEditing}
+                            style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || !hasResume || isEditing) ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.3s', opacity: (!hasResume || isEditing) ? 0.5 : 1 }}
                         >
-                            {deploying ? "CONVERTING..." : deployed ? "OPENING PDF..." : "DEPLOY PDF"}
+                            {deploying ? "CONVERTING PDF..." : deployed ? "DEPLOYMENT SUCCESSFUL" : "DEPLOY PDF"}
+                            {deploying && <RefreshCw size={14} className="live-dot" style={{marginRight: 0}} />}
                             {!deploying && !deployed && <FileDown size={14} />}
                             {deployed && <FileCheck size={14} />}
                         </button>
@@ -403,7 +422,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
              {/* FOOTER ACTIONS */}
             <div style={{ padding: '15px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <a href={job.url} target="_blank" style={{ flexGrow: 1, textDecoration: 'none', textAlign: 'center', color: '#fff', border: '1px solid #444', padding: '8px', borderRadius: '4px', fontSize: '12px', background: '#111', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+                    <a href={job.url} target="_blank" style={{ flexGrow: 1, textDecoration: 'none', textAlign: 'center', color: '#fff', border: '1px solid #444', padding: '8px', borderRadius: '4px', fontSize: '12px', background: '#111', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'background 0.2s' }}>
                         OPEN ORIGINAL SOURCE <ExternalLink size={14} />
                     </a>
                     <button onClick={handleCopyUrl} style={{ background: urlCopied ? 'var(--accent)' : '#111', border: '1px solid #444', color: urlCopied ? '#000' : '#aaa', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}>
@@ -413,26 +432,26 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
                  {job.status === 'TARGET' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
-                        <button onClick={() => handleTriageAction('REJECTED')} style={{ background: '#220000', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>REJECT (X)</button>
-                        <button onClick={() => handleTriageAction('APPLIED')} style={{ background: 'var(--applied)', border: 'none', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <button onClick={() => handleTriageAction('REJECTED')} style={{ background: '#220000', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>REJECT (X)</button>
+                        <button onClick={() => handleTriageAction('APPLIED')} style={{ background: 'var(--applied)', border: 'none', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', transition: 'opacity 0.2s' }}>
                             MARK APPLIED (A) <Check size={14} />
                         </button>
                     </div>
                 )}
                  {job.status === 'APPLIED' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
-                        <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>UNDO (TO TARGET)</button>
-                        <button onClick={() => handleTriageAction('INTERVIEW')} style={{ background: 'var(--interview)', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>MARK INTERVIEW</button>
+                        <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>UNDO (TO TARGET)</button>
+                        <button onClick={() => handleTriageAction('INTERVIEW')} style={{ background: 'var(--interview)', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>MARK INTERVIEW</button>
                     </div>
                 )}
                 {job.status === 'INTERVIEW' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
-                        <button onClick={() => handleCorrection('APPLIED')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>UNDO (TO APPLIED)</button>
-                        <button onClick={() => handleTriageAction('OFFER')} style={{ background: '#fff', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>MARK OFFER</button>
+                        <button onClick={() => handleCorrection('APPLIED')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>UNDO (TO APPLIED)</button>
+                        <button onClick={() => handleTriageAction('OFFER')} style={{ background: '#fff', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>MARK OFFER</button>
                     </div>
                 )}
                 {job.status === 'REJECTED' && (
-                    <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '5px' }}>
+                    <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '5px', transition: 'opacity 0.2s' }}>
                         RESTORE TO TARGET <RotateCcw size={14} />
                     </button>
                 )}
@@ -446,15 +465,15 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         <div style={{ flexGrow: 1, background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <User size={14} /> ACTIVE ASSET ({job.selected_resume})
+                    <User size={14} /> ACTIVE ASSET ({job.selected_resume || "None"})
                 </div>
                 {/* EDIT CONTROLS */}
                 {!isEditing ? (
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={handleRegenerateSummary} disabled={regenerating} style={{ background: 'transparent', border: 'none', color: regenerating ? 'var(--accent)' : '#aaa', cursor: 'pointer', padding: '4px' }} title="Regenerate Summary">
+                        <button onClick={handleRegenerateSummary} disabled={!hasResume || regenerating || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: regenerating ? 'var(--accent)' : '#aaa', cursor: (!hasResume || regenerating || resumeContent === "Loading...") ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Regenerate Summary">
                             <RefreshCw size={16} className={regenerating ? "live-dot" : ""} />
                         </button>
-                        <button onClick={handleStartEdit} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', padding: '4px' }} title="Edit Resume">
+                        <button onClick={handleStartEdit} disabled={!hasResume || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: resumeContent === "Loading..." ? '#444' : '#aaa', cursor: resumeContent === "Loading..." ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Edit Resume">
                             <Edit size={16} />
                         </button>
                     </div>
@@ -483,8 +502,27 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                         }} 
                     />
                 ) : (
-                    <div style={{ padding: '20px', height: '100%', overflowY: 'auto', color: '#888', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', boxSizing: 'border-box' }}>
-                        {formatResume(resumeContent)}
+                    <div style={{ height: '100%', overflowY: 'auto', color: '#888', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', boxSizing: 'border-box' }}>
+                        {!hasResume ? (
+                             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '15px' }} className="fade-in">
+                                 <FilePlus size={32} color="#333" />
+                                 <div style={{ fontSize: '12px', color: '#666' }}>NO RESUME GENERATED</div>
+                                 <button 
+                                    onClick={handleRegenerateSummary}
+                                    style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                                    onMouseOver={e => e.target.style.borderColor = 'var(--accent)'}
+                                    onMouseOut={e => e.target.style.borderColor = '#444'}
+                                 >
+                                    <BrainCircuit size={14} /> GENERATE ASSET
+                                 </button>
+                             </div>
+                        ) : resumeContent === "Loading..." ? (
+                            renderSkeletonResume()
+                        ) : (
+                            <div style={{ padding: '20px' }} className="fade-in">
+                                {formatResume(resumeContent)}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -493,4 +531,4 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       </div>
     </div>
   );
-}
+} 

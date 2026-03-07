@@ -95,10 +95,12 @@ def hunter_loop():
         offset = 0
         total_results = 0
         total_new = 0
+        interrupted = False
         
         while True:
             # Re-check state mid-mission to allow immediate pausing
             if not mem.get_agent_state():
+                interrupted = True
                 break
 
             results = perform_sweep(term, "USA" if is_remote else loc, is_remote, batch_size=SWEEP_BATCH_SIZE, offset=offset)
@@ -119,9 +121,14 @@ def hunter_loop():
             offset += SWEEP_BATCH_SIZE
             time.sleep(random.randint(5, 8))
         
-        mem.mark_agenda_complete(term)
-        mem.log_mission_results(term, total_results, total_new, 0)
-        time.sleep(random.randint(15, 30))
+        if interrupted:
+            print(f"[CNS] ⏸️ Mission '{term}' paused by user. Returning to queue...")
+            mem.reset_mission_status(term)
+            time.sleep(1) # Short delay before checking state loop again
+        else:
+            mem.mark_agenda_complete(term)
+            mem.log_mission_results(term, total_results, total_new, 0)
+            time.sleep(random.randint(15, 30))
 
 def analyst_loop(worker_id):
     print(f"[CNS] Analyst-{worker_id} Online.")

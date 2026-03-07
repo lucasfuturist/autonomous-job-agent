@@ -29,7 +29,6 @@ try:
     mem = Memory()
     from tools.brain import Brain
     brain = Brain()
-    import reweigh_queue
 except Exception as e:
     print(f"[SERVER] ⚠️ CRITICAL: Could not load Memory/Brain module.\nError: {e}")
     traceback.print_exc()
@@ -273,8 +272,13 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"success": True})
             
             elif self.path == '/api/rescore':
-                threading.Thread(target=reweigh_queue.run_assimilation, daemon=True).start()
-                self._send_json({"success": True})
+                try:
+                    import reweigh_queue
+                    threading.Thread(target=reweigh_queue.run_assimilation, daemon=True).start()
+                    self._send_json({"success": True})
+                except ImportError:
+                     print("[SERVER] 'reweigh_queue.py' not found. Skipping assimilation.")
+                     self._send_json({"success": False, "error": "Module missing"})
             
             elif self.path == '/api/agenda':
                 data = json.loads(post_data)

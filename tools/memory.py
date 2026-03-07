@@ -336,6 +336,13 @@ class Memory:
         conn.commit()
         conn.close()
 
+    def reset_mission_status(self, term):
+        """Used when a mission is interrupted by the user (Agent Stop)."""
+        conn = self._get_conn()
+        conn.execute("UPDATE agenda SET status='PENDING' WHERE term = ?", (term,))
+        conn.commit()
+        conn.close()
+
     def get_agenda_status(self):
         conn = self._get_conn()
         count = conn.execute("SELECT COUNT(*) FROM agenda WHERE status='PENDING'").fetchone()[0]

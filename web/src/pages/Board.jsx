@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, Wifi, Loader2 } from 'lucide-react';
+import { Search, MapPin, Wifi, Inbox } from 'lucide-react';
 import JobCard from '../components/JobCard';
 import JobModal from '../components/JobModal';
 
@@ -106,10 +106,28 @@ export default function Board() {
     { id: 'REJECTED', title: '❌ TRASH', color: 'var(--danger)' }
   ];
 
-  if (loading) return <div style={{ padding: '20px', display: 'flex', gap: '10px' }}><Loader2 className="live-dot" /> Loading War Room...</div>;
+  const renderSkeletonBoard = () => {
+    return (
+      <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', flexGrow: 1, paddingBottom: '10px' }} className="fade-in">
+        {columns.map((col, idx) => (
+          <div key={idx} style={{ minWidth: '350px', width: '350px', background: '#0a0a0a', border: '1px solid #222', borderRadius: '6px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '15px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between' }}>
+               <div className="skeleton" style={{ height: '16px', width: '40%' }}></div>
+               <div className="skeleton" style={{ height: '16px', width: '20px', borderRadius: '10px' }}></div>
+            </div>
+            <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div className="skeleton" style={{ height: '80px', width: '100%', borderRadius: '4px' }}></div>
+                <div className="skeleton" style={{ height: '80px', width: '100%', borderRadius: '4px' }}></div>
+                <div className="skeleton" style={{ height: '80px', width: '100%', borderRadius: '4px' }}></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
-    <div style={{ height: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }} className="fade-in">
       <JobModal job={selectedJob} onClose={() => setSelectedJob(null)} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onNext={handleNext} onPrev={handlePrev} />
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -134,31 +152,43 @@ export default function Board() {
 
           <div style={{ width: '1px', background: '#333' }}></div>
 
-          <button onClick={() => setRemoteOnly(!remoteOnly)} style={{ background: remoteOnly ? 'rgba(0, 255, 157, 0.1)' : 'transparent', border: `1px solid ${remoteOnly ? 'var(--accent)' : 'transparent'}`, color: remoteOnly ? 'var(--accent)' : '#666', padding: '4px 8px', borderRadius: '3px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer' }}>
+          <button onClick={() => setRemoteOnly(!remoteOnly)} style={{ background: remoteOnly ? 'rgba(0, 255, 157, 0.1)' : 'transparent', border: `1px solid ${remoteOnly ? 'var(--accent)' : 'transparent'}`, color: remoteOnly ? 'var(--accent)' : '#666', padding: '4px 8px', borderRadius: '3px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}>
             <Wifi size={12} /> REMOTE
           </button>
         </div>
       </div>
       
-      <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', flexGrow: 1, paddingBottom: '10px' }}>
-        {columns.map(col => {
-          const colJobs = filteredJobs.filter(j => j.status === col.id);
-          const displayJobs = colJobs.slice(0, 100);
-          return (
-            <div key={col.id} style={{ minWidth: '350px', width: '350px', background: '#0a0a0a', border: '1px solid #222', borderRadius: '6px', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: '15px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 'bold', color: col.color }}>{col.title}</span>
-                <span style={{ background: '#222', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', color: '#aaa' }}>{colJobs.length}</span>
-              </div>
-              <div style={{ padding: '10px', overflowY: 'auto', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {displayJobs.map(job => (
-                  <JobCard key={job.id} job={job} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onClick={setSelectedJob} compact={true} />
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {loading ? renderSkeletonBoard() : (
+          <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', flexGrow: 1, paddingBottom: '10px' }}>
+            {columns.map(col => {
+              const colJobs = filteredJobs.filter(j => j.status === col.id);
+              const displayJobs = colJobs.slice(0, 100);
+              return (
+                <div key={col.id} style={{ minWidth: '350px', width: '350px', background: '#0a0a0a', border: '1px solid #222', borderRadius: '6px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '15px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 'bold', color: col.color }}>{col.title}</span>
+                    <span style={{ background: '#222', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', color: '#aaa' }}>{colJobs.length}</span>
+                  </div>
+                  <div style={{ padding: '10px', overflowY: 'auto', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    
+                    {displayJobs.length === 0 ? (
+                        <div className="empty-state" style={{ padding: '40px 10px' }}>
+                            <Inbox size={32} opacity={0.1} color="#fff" />
+                            <div style={{ fontSize: '11px', color: '#444' }}>No active intelligence.</div>
+                        </div>
+                    ) : (
+                        displayJobs.map((job, idx) => (
+                          <div key={job.id} style={{ animationDelay: `${idx * 0.05}s` }}>
+                              <JobCard job={job} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onClick={setSelectedJob} compact={true} />
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+      )}
     </div>
   );
 }

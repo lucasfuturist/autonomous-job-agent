@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star, FileText, Terminal } from 'lucide-react';
+import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star, FileText, Terminal, Ghost } from 'lucide-react';
 import JobCard from '../components/JobCard';
 import JobModal from '../components/JobModal';
 
@@ -9,6 +9,8 @@ export default function Feed() {
   const [displayLimit, setDisplayLimit] = useState(100);
   const [selectedJob, setSelectedJob] = useState(null); 
   
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
   const [showRules, setShowRules] = useState(false);
   const [rules, setRules] = useState("");
   const [rescoreLoading, setRescoreLoading] = useState(false);
@@ -49,6 +51,7 @@ export default function Feed() {
         if (text !== lastJobsRaw.current && !isTriaging.current) {
             lastJobsRaw.current = text;
             setJobs(JSON.parse(text));
+            setIsInitialLoad(false);
         }
       }
       if (statusRes.ok) {
@@ -58,7 +61,10 @@ export default function Feed() {
             setQueueSize(JSON.parse(text).queue_size);
         }
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        console.error(e); 
+        setIsInitialLoad(false);
+    }
   };
 
   const fetchRules = async () => {
@@ -175,25 +181,47 @@ export default function Feed() {
       if (idx > 0) setSelectedJob(visibleJobs[idx - 1]);
   };
 
+  const renderSkeletonCards = () => {
+    return Array.from({ length: 8 }).map((_, i) => (
+      <div key={i} style={{ background: '#0a0a0a', border: '1px solid #222', borderLeft: '3px solid #333', padding: '10px', height: '120px', display: 'flex', flexDirection: 'column' }} className="fade-in">
+         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <div style={{ width: '60%' }}>
+                <div className="skeleton" style={{ height: '16px', width: '100%', marginBottom: '6px' }}></div>
+                <div className="skeleton" style={{ height: '12px', width: '50%' }}></div>
+            </div>
+            <div className="skeleton" style={{ height: '24px', width: '40px', borderRadius: '4px' }}></div>
+         </div>
+         <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+             <div className="skeleton" style={{ height: '14px', width: '60px' }}></div>
+             <div className="skeleton" style={{ height: '14px', width: '40px' }}></div>
+         </div>
+         <div style={{ display: 'flex', gap: '5px', marginTop: 'auto' }}>
+            <div className="skeleton" style={{ height: '24px', flexGrow: 1 }}></div>
+            <div className="skeleton" style={{ height: '24px', flexGrow: 1 }}></div>
+         </div>
+      </div>
+    ));
+  };
+
   return (
-    <div>
+    <div className="fade-in">
       <JobModal job={selectedJob} onClose={() => setSelectedJob(null)} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onNext={handleNext} onPrev={handlePrev} />
       
-      {/* COMMANDER MODULE (NEW) */}
+      {/* COMMANDER MODULE */}
       <div style={{ marginBottom: '15px' }}>
           <form onSubmit={handleSendCommand} style={{ display: 'flex', gap: '10px' }}>
               <div style={{ flexGrow: 1, position: 'relative' }}>
-                  <Terminal size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)' }} />
+                  <Terminal size={14} className={commandLoading ? "live-dot" : ""} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)' }} />
                   <input 
                     type="text" 
                     placeholder="Enter mission command (e.g. 'Hunt for mid-level embedded systems roles in Boston or Remote')..." 
                     value={command} 
                     onChange={(e) => setCommand(e.target.value)} 
                     disabled={commandLoading}
-                    style={{ width: '100%', background: '#0a0a0a', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '10px 10px 10px 35px', borderRadius: '4px', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }} 
+                    style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${commandLoading ? '#333' : 'var(--accent)'}`, color: 'var(--accent)', padding: '10px 10px 10px 35px', borderRadius: '4px', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box', transition: 'border 0.3s' }} 
                   />
               </div>
-              <button type="submit" disabled={commandLoading} style={{ background: 'var(--accent)', color: '#000', border: 'none', padding: '0 20px', borderRadius: '4px', fontWeight: 'bold', cursor: commandLoading ? 'wait' : 'pointer' }}>
+              <button type="submit" disabled={commandLoading} style={{ background: commandLoading ? '#222' : 'var(--accent)', color: commandLoading ? '#888' : '#000', border: 'none', padding: '0 20px', borderRadius: '4px', fontWeight: 'bold', cursor: commandLoading ? 'wait' : 'pointer', transition: 'all 0.3s' }}>
                   {commandLoading ? "PARSING..." : "EXECUTE"}
               </button>
           </form>
@@ -201,12 +229,12 @@ export default function Feed() {
 
       {/* TACTICAL CONTROLS */}
       <div style={{ marginBottom: '15px' }}>
-         <button onClick={() => setShowRules(!showRules)} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 15px', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+         <button onClick={() => setShowRules(!showRules)} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 15px', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', transition: 'background 0.2s' }}>
             <ShieldAlert size={14} color={rules.length > 5 ? "var(--accent)" : "#666"} />
             TACTICAL RULES {rules.length > 5 && "(ACTIVE)"}
          </button>
          {showRules && (
-            <div style={{ background: '#111', border: '1px solid #333', padding: '15px', marginTop: '10px', borderRadius: '4px' }}>
+            <div className="slide-up" style={{ background: '#111', border: '1px solid #333', padding: '15px', marginTop: '10px', borderRadius: '4px' }}>
                 <textarea value={rules} onChange={(e) => setRules(e.target.value)} style={{ width: '100%', height: '100px', background: '#000', border: '1px solid #333', color: '#fff', fontFamily: 'monospace', padding: '10px', boxSizing: 'border-box' }} />
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                     <button onClick={handleSaveRules} style={{ background: 'var(--accent)', color: '#000', border: 'none', padding: '8px 15px', fontWeight: 'bold', borderRadius: '2px', cursor: 'pointer' }}>SAVE RULES</button>
@@ -225,13 +253,13 @@ export default function Feed() {
         {/* Search */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexGrow: 1 }}>
           <Search size={16} color="#666" />
-          <input type="text" placeholder="Search targets..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '8px', width: '100%', minWidth: '150px' }} />
+          <input type="text" placeholder="Search targets..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '8px', width: '100%', minWidth: '150px', outline: 'none' }} />
         </div>
 
         {/* Filters */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <MapPin size={16} color="#666" />
-          <select value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} style={{ background: '#000', color: '#fff', border: '1px solid #444', padding: '7px', outline: 'none' }}>
+          <select value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} style={{ background: '#000', color: '#fff', border: '1px solid #444', padding: '7px', outline: 'none', cursor: 'pointer' }}>
             <option value="ALL">ALL STATES</option>
             {availableStates.map(st => <option key={st} value={st}>{st}</option>)}
           </select>
@@ -239,7 +267,7 @@ export default function Feed() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <FileText size={16} color="#666" />
-          <select value={resumeFilter} onChange={(e) => setResumeFilter(e.target.value)} style={{ background: '#000', color: '#fff', border: '1px solid #444', padding: '7px', outline: 'none', maxWidth: '200px' }}>
+          <select value={resumeFilter} onChange={(e) => setResumeFilter(e.target.value)} style={{ background: '#000', color: '#fff', border: '1px solid #444', padding: '7px', outline: 'none', maxWidth: '200px', cursor: 'pointer' }}>
             <option value="ALL">ALL RESUMES</option>
             {availableResumes.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
@@ -247,16 +275,16 @@ export default function Feed() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Target size={16} color="#666" />
-          <input type="range" min="1" max="10" step="0.5" value={minScore} onChange={(e) => setMinScore(parseFloat(e.target.value))} style={{ accentColor: 'var(--accent)' }} />
+          <input type="range" min="1" max="10" step="0.5" value={minScore} onChange={(e) => setMinScore(parseFloat(e.target.value))} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
           <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{minScore}</span>
         </div>
 
         {/* Toggles */}
-        <button onClick={() => setRemoteOnly(!remoteOnly)} style={{ background: remoteOnly ? 'rgba(0,255,157,0.1)' : '#000', border: `1px solid ${remoteOnly ? 'var(--accent)' : '#444'}`, color: remoteOnly ? 'var(--accent)' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+        <button onClick={() => setRemoteOnly(!remoteOnly)} style={{ background: remoteOnly ? 'rgba(0,255,157,0.1)' : '#000', border: `1px solid ${remoteOnly ? 'var(--accent)' : '#444'}`, color: remoteOnly ? 'var(--accent)' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderRadius: '3px', transition: 'all 0.2s' }}>
           <Wifi size={14} /> REMOTE
         </button>
 
-        <button onClick={() => setStarsOnly(!starsOnly)} style={{ background: starsOnly ? 'rgba(255,215,0,0.1)' : '#000', border: `1px solid ${starsOnly ? 'gold' : '#444'}`, color: starsOnly ? 'gold' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+        <button onClick={() => setStarsOnly(!starsOnly)} style={{ background: starsOnly ? 'rgba(255,215,0,0.1)' : '#000', border: `1px solid ${starsOnly ? 'gold' : '#444'}`, color: starsOnly ? 'gold' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderRadius: '3px', transition: 'all 0.2s' }}>
           <Star size={14} fill={starsOnly ? "gold" : "none"} /> STARRED
         </button>
         
@@ -273,18 +301,31 @@ export default function Feed() {
 
       {/* GRID */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))', gap: '15px' }}>
-        {filteredJobs.length === 0 && <div style={{ color: '#666', padding: '20px' }}>No targets match current filters.</div>}
-        {visibleJobs.map(job => (
-          <JobCard key={job.id} job={job} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onClick={setSelectedJob} />
-        ))}
+        {isInitialLoad ? (
+            renderSkeletonCards()
+        ) : filteredJobs.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1' }} className="empty-state">
+                <Ghost size={48} opacity={0.2} color="#fff" />
+                <div style={{ fontSize: '16px', color: '#888' }}>NO TARGETS FOUND</div>
+                <div style={{ fontSize: '12px', color: '#555' }}>Adjust radar parameters or deploy a new scout command.</div>
+            </div>
+        ) : (
+            visibleJobs.map((job, idx) => (
+                <div key={job.id} style={{ animationDelay: `${idx * 0.05}s` }}>
+                    <JobCard job={job} onUpdateStatus={handleUpdateStatus} onToggleStar={handleToggleStar} onClick={setSelectedJob} />
+                </div>
+            ))
+        )}
       </div>
 
       {/* LOAD MORE */}
-      {filteredJobs.length > displayLimit && (
-        <div style={{ textAlign: 'center', marginTop: '30px', paddingBottom: '30px' }}>
+      {!isInitialLoad && filteredJobs.length > displayLimit && (
+        <div style={{ textAlign: 'center', marginTop: '30px', paddingBottom: '30px' }} className="fade-in">
             <button 
                 onClick={() => setDisplayLimit(prev => prev + 100)}
-                style={{ background: '#111', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '10px 30px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+                style={{ background: '#111', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '10px 30px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'background 0.2s' }}
+                onMouseOver={(e) => e.target.style.background = 'rgba(0, 255, 157, 0.1)'}
+                onMouseOut={(e) => e.target.style.background = '#111'}
             >
                 LOAD MORE TARGETS ({filteredJobs.length - displayLimit} REMAINING)
             </button>

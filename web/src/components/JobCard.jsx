@@ -60,9 +60,9 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
       style={{ 
         background: bgStyle, border: '1px solid #222', borderLeft: borderStyle, 
         padding: '10px', display: 'flex', flexDirection: 'column', position: 'relative',
-        fontSize: compact ? '11px' : '13px', cursor: 'pointer', transition: 'transform 0.1s'
+        fontSize: compact ? '11px' : '13px', cursor: 'pointer', transition: 'transform 0.1s, border-color 0.2s, background 0.2s'
       }}
-      className="job-card-hover"
+      className="job-card-hover slide-up fade-in"
     >
       {/* HEADER ROW */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
@@ -76,7 +76,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
         </div>
         
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button onClick={(e) => { stopProp(e); onToggleStar(job.id, !isStarred); }} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: isStarred ? 'gold' : '#333' }}>
+            <button onClick={(e) => { stopProp(e); onToggleStar(job.id, !isStarred); }} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', color: isStarred ? 'gold' : '#333', transition: 'color 0.2s' }}>
                 <Star size={16} fill={isStarred ? "gold" : "none"} />
             </button>
             <div style={{ fontSize: compact ? '14px' : '20px', fontWeight: 'bold', color: 'var(--accent)', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', height: 'fit-content' }}>
@@ -85,7 +85,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
         </div>
       </div>
 
-      {/* METADATA BADGES (NEW) */}
+      {/* METADATA BADGES */}
       <div style={{ display: 'flex', gap: '5px', marginBottom: '8px', flexWrap: 'wrap' }}>
         {salaryString && (
            <span style={{ background: 'rgba(0, 255, 157, 0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -110,7 +110,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
         {!compact && <span style={{ background: '#222', color: '#aaa', border: '1px solid #444', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.location}</span>}
       </div>
 
-      {/* TECH STACK PILLS (NEW) */}
+      {/* TECH STACK PILLS */}
       {!compact && techStack.length > 0 && (
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
               {techStack.slice(0, 4).map((tech, i) => (
@@ -124,36 +124,36 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
 
       {/* ACTION BAR */}
       <div style={{ marginTop: 'auto', display: 'flex', gap: '4px' }} onClick={stopProp}>
-        <a href={job.url} target="_blank" style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px' }}>
+        <a href={job.url} target="_blank" style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}>
           <ExternalLink size={12} />
         </a>
 
         {scriptContent && (
-          <button onClick={handleCopy} style={{ flex: 1, background: copied ? 'var(--accent)' : '#111', color: copied ? '#000' : 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px' }}>
+          <button onClick={handleCopy} style={{ flex: 1, background: copied ? 'var(--accent)' : '#111', color: copied ? '#000' : 'var(--accent)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px', transition: 'all 0.2s' }}>
             <Copy size={12} />
           </button>
         )}
 
         {job.status === 'TARGET' && (
             <>
-                <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Mark Applied" style={{ background: '#111', border: '1px solid var(--applied)', color: 'var(--applied)', padding: '6px', borderRadius: '3px' }}><Check size={14} /></button>
-                <button onClick={() => onUpdateStatus(job.id, 'REJECTED')} title="Reject" style={{ background: '#111', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '6px', borderRadius: '3px' }}><X size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Mark Applied" style={{ background: '#111', border: '1px solid var(--applied)', color: 'var(--applied)', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}><Check size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'REJECTED')} title="Reject" style={{ background: '#111', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}><X size={14} /></button>
             </>
         )}
         {job.status === 'APPLIED' && (
             <>
-                <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
-                <button onClick={() => onUpdateStatus(job.id, 'INTERVIEW')} title="Mark Interview" style={{ background: '#111', border: '1px solid var(--interview)', color: 'var(--interview)', padding: '6px', borderRadius: '3px' }}><Mic size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}><RotateCcw size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'INTERVIEW')} title="Mark Interview" style={{ background: '#111', border: '1px solid var(--interview)', color: 'var(--interview)', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}><Mic size={14} /></button>
             </>
         )}
         {job.status === 'INTERVIEW' && (
             <>
-                <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px' }}><RotateCcw size={14} /></button>
-                <button onClick={() => onUpdateStatus(job.id, 'OFFER')} title="Mark Offer" style={{ background: '#111', border: '1px solid #fff', color: '#fff', padding: '6px', borderRadius: '3px' }}><ArrowRight size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'APPLIED')} title="Undo" style={{ background: '#111', border: '1px solid #444', color: '#666', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}><RotateCcw size={14} /></button>
+                <button onClick={() => onUpdateStatus(job.id, 'OFFER')} title="Mark Offer" style={{ background: '#111', border: '1px solid #fff', color: '#fff', padding: '6px', borderRadius: '3px', transition: 'background 0.2s' }}><ArrowRight size={14} /></button>
             </>
         )}
         {job.status === 'REJECTED' && (
-            <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Restore" style={{ flexGrow: 1, background: '#111', border: '1px solid #444', color: '#fff', padding: '6px', borderRadius: '3px', display:'flex', justifyContent:'center', gap:'5px', alignItems:'center' }}>
+            <button onClick={() => onUpdateStatus(job.id, 'TARGET')} title="Restore" style={{ flexGrow: 1, background: '#111', border: '1px solid #444', color: '#fff', padding: '6px', borderRadius: '3px', display:'flex', justifyContent:'center', gap:'5px', alignItems:'center', transition: 'background 0.2s' }}>
                 <RotateCcw size={14} /> RESTORE
             </button>
         )}
