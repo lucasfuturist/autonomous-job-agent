@@ -47,7 +47,6 @@ class Brain:
         
         normalized = {}
         for k, v in data.items():
-            # Remove spaces, usually around underscores
             clean_k = k.replace(" ", "")
             normalized[clean_k] = v
         return normalized
@@ -81,96 +80,125 @@ class Brain:
         return terms
     
     def evaluate(self, job):
+        # --- 0. FAST FAIL: HEURISTICS ---
         location = job.get('location', '')
         if location:
             mem_instance = self.MemoryClass()
             distance = mem_instance.get_or_fetch_distance(location)
-            
-            if distance is not None:
-                if distance != -1.0 and distance > MAX_COMMUTE_MILES:
-                    print(f"[BRAIN] 🛑 Geofence Reject: '{job['company']}' is {distance} miles away in {location}.")
-                    return {"score": 0, "reason": f"Geofence Reject: {distance} miles away (Max allowed: {MAX_COMMUTE_MILES} mi). Not remote."}
+            if distance is not None and distance != -1.0 and distance > MAX_COMMUTE_MILES:
+                return {"score": 0, "reason": f"Geofence Reject: {distance} miles away."}
 
         title_lower = str(job.get('title', '')).lower()
         company_lower = str(job.get('company', '')).lower()
         
         for pattern in COMPANY_BLACKLIST:
             if re.search(pattern, company_lower):
-                print(f"[BRAIN] 🚫 Hard Reject: Company '{pattern}' matched {job.get('company')}")
                 return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Company '{pattern}'"}
-                
         for pattern in TITLE_BLACKLIST:
             if re.search(pattern, title_lower):
-                print(f"[BRAIN] 🚫 Hard Reject: Title token '{pattern}' matched {job.get('title')}")
                 return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Role '{pattern}'"}
 
         dynamic_rules = self._load_dynamic_rules()
 
-        prompt = f"""
-        Role: Hostile Technical Gatekeeper & Data Extractor.
+        # --- PASS 1: SCORING (FIT CHECK) ---
+        # Keep this lightweight (OLLAMA_MODEL) for speed
+        score_data = {"score": 0, "reason": "Default"}
+        prompt_score = f"""
+        Role: Hostile Technical Gatekeeper.
+        
+        CANDIDATE PROFILE:
+        - Deep Tech Systems Engineer (Python, C++, Robotics, AI Infrastructure).
+        - Wants: Founding Engineer, AI Platform, Robotics Middleware, Hard Tech.
+        
+        ANTI-PERSONA (IMMEDIATE REJECT):
+        - NOT a Doctor, Nurse, or Medical Professional.
+        - NOT a Civil Engineer (Construction, HVAC, Concrete).
+        - NOT a Web Developer (Wordpress, Shopify).
+        - NOT IT Support (Helpdesk, SysAdmin).
         
         JOB TO EVALUATE:
         Title: {job['title']}
         Company: {job['company']}
-        Description: {job['description'][:2500]}
+        Description: {job['description'][:2000]}
         
-        --------------------------------------------------------
-        PART 1: SCORING (FIT CHECK)
-        Compare against this Candidate Profile:
-        - Deep Tech Systems Engineer (Python, C++, Robotics, AI Infrastructure).
-        - Wants: Founding Engineer, AI Platform, Robotics Middleware, Hard Tech.
-        - Rules: {USER_PREFERENCES} {dynamic_rules}
+        SCORING RUBRIC (0-10):
+        - 0-2: Medical/Trades/Sales/IT Support.
+        - 3-5: Generic Web Dev or Business Analyst.
+        - 8-10: Hard Match (Robotics, AI Infra, C++/Python Systems).
         
-        Scoring Rubric (0-10):
-        - 0-2: Medical/Trades/Sales (Immediate Reject).
-        - 3-5: Generic IT/Web Dev (Soft Reject).
-        - 8-10: Perfect match for Robotics/AI Infrastructure.
-
-        --------------------------------------------------------
-        PART 2: DATA EXTRACTION (STRICTLY FROM JOB DESCRIPTION)
-        Extract facts ONLY from the Job Description above. 
-        DO NOT use the Candidate Profile for this section. 
-        If the job does not mention a technology, DO NOT list it.
+        DYNAMIC RULES: {USER_PREFERENCES} {dynamic_rules}
         
-        Schema:
-        - salary_base_min: int or null (Annual base only).
-        - salary_base_max: int or null.
-        - work_mode: "Remote", "Hybrid", "Onsite", "Unknown".
-        - travel_pct_max: int or null.
-        - clearance_required: "None", "Secret", "TS/SCI", "Poly".
-        - itar_ear_restricted: boolean (True if US Citizenship mentioned for export control).
-        - tech_stack_core: list[str] (Extract top 5 technologies REQUIRED by the JOB. If none, return []).
-        - hardware_physical_tools: list[str] (Extract hardware/tools REQUIRED by the JOB. If none, return []).
-        - yoe_actual: int (Minimum years required. Infer 0 if entry, 5 if senior, 8 if staff).
-        - red_flags: list[str] (Toxic traits, unpaid, citizenship reqs without clearance).
-
-        Output ONLY valid JSON:
-        {{
-            "score": int,
-            "reason": "Short justification...",
-            "salary_base_min": int,
-            "salary_base_max": int,
-            "work_mode": "str",
-            "travel_pct_max": int,
-            "clearance_required": "str",
-            "itar_ear_restricted": bool,
-            "tech_stack_core": ["..."],
-            "hardware_physical_tools": ["..."],
-            "yoe_actual": int,
-            "red_flags": ["..."]
-        }}
+        Output JSON: {{"score": int, "reason": "Short justification"}}
         """
+        
         with self.lock:
             try:
-                res = ollama.chat(model=OLLAMA_MODEL, messages=[
-                    {'role': 'user', 'content': prompt}
-                ], format='json')
+                res1 = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt_score}], format='json')
+                score_data = json.loads(res1['message']['content'])
+            except Exception as e:
+                return {"score": 0, "reason": f"Scoring Fault: {e}"}
+
+        # If the job is junk, don't waste time (or heavy compute) extracting data
+        if score_data.get('score', 0) < 2:
+            return score_data
+
+        # --- PASS 2: DATA EXTRACTION (HEAVY MODEL) ---
+        # Use HEAVY_MODEL here for precision JSON extraction
+        prompt_extract = f"""
+        Role: Precise Data Extraction Engine.
+        Task: Extract technical metadata from the text below.
+        
+        SOURCE TEXT:
+        Title: {job['title']}
+        Company: {job['company']}
+        Description: {job['description'][:3000]}
+        
+        RULES:
+        1. EXTRACT ONLY what is explicitly stated in the text.
+        2. DO NOT infer skills not listed.
+        3. DO NOT include "reasoning" or "comments" in the JSON. Output RAW JSON only.
+        4. If a field is missing, return null (for ints) or [] (for lists).
+        
+        SCHEMA:
+        - salary_base_min: int or null
+        - salary_base_max: int or null
+        - work_mode: "Remote", "Hybrid", "Onsite", "Unknown"
+        - travel_pct_max: int or null
+        - clearance_required: "None", "Secret", "TS/SCI", "Poly"
+        - itar_ear_restricted: boolean
+        - tech_stack_core: list[str] (Top 5 required technologies)
+        - hardware_physical_tools: list[str] (Hardware/Machinery)
+        - yoe_actual: int (Minimum years required)
+        - red_flags: list[str] (Toxic traits, unpaid, etc.)
+
+        Output JSON:
+        {{
+            "salary_base_min": 100000,
+            "salary_base_max": 150000,
+            "work_mode": "Hybrid",
+            "travel_pct_max": 10,
+            "clearance_required": "None",
+            "itar_ear_restricted": false,
+            "tech_stack_core": ["Python", "AWS"],
+            "hardware_physical_tools": [],
+            "yoe_actual": 5,
+            "red_flags": []
+        }}
+        """
+        
+        extract_data = {}
+        with self.lock:
+            try:
+                # SWITCHED TO HEAVY_MODEL FOR STABILITY
+                res2 = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_extract}], format='json')
+                raw_extract = json.loads(res2['message']['content'])
+                extract_data = self._normalize_keys(raw_extract)
+            except Exception as e:
+                print(f"[BRAIN] Extraction Fault ({HEAVY_MODEL}): {e}")
                 
-                raw_data = json.loads(res['message']['content'])
-                return self._normalize_keys(raw_data)
-                
-            except Exception as e: 
-                return {"score": 0, "reason": f"Brain Fault ({OLLAMA_MODEL}): {e}"}
+        # Merge results
+        final_result = {**score_data, **extract_data}
+        return final_result
 
     def build_jit_resume(self, job):
         master = self._load_master_data()

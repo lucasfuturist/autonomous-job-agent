@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, DollarSign, ShieldAlert, Cpu, Globe, Briefcase } from 'lucide-react';
 
 const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }) => {
   const [showScript, setShowScript] = useState(false);
@@ -7,6 +7,20 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
 
   const parts = (job.reason || "").split("### DEPLOYMENT SCRIPT:");
   const scriptContent = parts.length > 1 ? parts[1].trim() : null;
+
+  // --- PARSE ENRICHED DATA ---
+  const techStack = useMemo(() => {
+    try { return job.tech_stack_core ? JSON.parse(job.tech_stack_core) : []; } catch { return []; }
+  }, [job.tech_stack_core]);
+
+  const salaryString = useMemo(() => {
+    if (!job.salary_base_min && !job.salary_base_max) return null;
+    const fmt = (n) => n >= 1000 ? `$${Math.round(n/1000)}k` : `$${n}`;
+    if (job.salary_base_min && job.salary_base_max) return `${fmt(job.salary_base_min)} - ${fmt(job.salary_base_max)}`;
+    return fmt(job.salary_base_min || job.salary_base_max) + "+";
+  }, [job.salary_base_min, job.salary_base_max]);
+
+  const hasClearance = job.clearance_required && job.clearance_required !== "None";
 
   const handleCopy = (e) => {
     e.stopPropagation();
@@ -50,13 +64,12 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
       }}
       className="job-card-hover"
     >
+      {/* HEADER ROW */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
         <div style={{ overflow: 'hidden', flexGrow: 1 }}>
-          {/* PRIMARY: JOB TITLE */}
           <div style={{ fontSize: compact ? '13px' : '16px', fontWeight: 'bold', color: '#fff', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={job.title}>
             {job.title}
           </div>
-          {/* SUBTITLE: COMPANY */}
           <div style={{ fontSize: compact ? '10px' : '13px', color: '#888', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={job.company}>
             {job.company}
           </div>
@@ -72,12 +85,44 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
         </div>
       </div>
 
+      {/* METADATA BADGES (NEW) */}
       <div style={{ display: 'flex', gap: '5px', marginBottom: '8px', flexWrap: 'wrap' }}>
-        {!compact && <span style={{ background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.selected_resume}</span>}
-        <span style={{ border: '1px solid #333', color: '#888', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.location}</span>
+        {salaryString && (
+           <span style={{ background: 'rgba(0, 255, 157, 0.1)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <DollarSign size={10} /> {salaryString}
+           </span>
+        )}
+        
+        {hasClearance && (
+           <span style={{ background: 'rgba(255, 0, 85, 0.1)', color: 'var(--danger)', border: '1px solid var(--danger)', padding: '2px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <ShieldAlert size={10} /> {job.clearance_required.toUpperCase()}
+           </span>
+        )}
+
+        {job.work_mode && job.work_mode !== "Unknown" && (
+           <span style={{ background: '#112', color: '#aaf', border: '1px solid #335', padding: '2px 5px', borderRadius: '3px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <Globe size={10} /> {job.work_mode}
+           </span>
+        )}
+        
         {renderDistanceBadge()}
+        
+        {!compact && <span style={{ background: '#222', color: '#aaa', border: '1px solid #444', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.location}</span>}
       </div>
 
+      {/* TECH STACK PILLS (NEW) */}
+      {!compact && techStack.length > 0 && (
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
+              {techStack.slice(0, 4).map((tech, i) => (
+                  <span key={i} style={{ fontSize: '9px', background: '#111', color: '#888', border: '1px solid #333', padding: '1px 4px', borderRadius: '2px' }}>
+                      {tech}
+                  </span>
+              ))}
+              {techStack.length > 4 && <span style={{ fontSize: '9px', color: '#666' }}>+{techStack.length - 4}</span>}
+          </div>
+      )}
+
+      {/* ACTION BAR */}
       <div style={{ marginTop: 'auto', display: 'flex', gap: '4px' }} onClick={stopProp}>
         <a href={job.url} target="_blank" style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', borderRadius: '3px' }}>
           <ExternalLink size={12} />
@@ -118,5 +163,9 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
 };
 
 export default React.memo(JobCard, (prev, next) => {
-    return prev.job.id === next.job.id && prev.job.status === next.job.status && prev.job.starred === next.job.starred && prev.job.score === next.job.score && prev.job.distance === next.job.distance;
+    return prev.job.id === next.job.id && 
+           prev.job.status === next.job.status && 
+           prev.job.starred === next.job.starred && 
+           prev.job.score === next.job.score && 
+           prev.job.salary_base_min === next.job.salary_base_min;
 });
