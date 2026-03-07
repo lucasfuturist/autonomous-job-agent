@@ -28,13 +28,6 @@ except ImportError:
     PDF_ENABLED = False
 
 try:
-    from duckduckgo_search import DDGS
-    DDGS_AVAILABLE = True
-except ImportError:
-    print("[SERVER] ⚠️  duckduckgo-search missing. Run: 'pip install duckduckgo-search'")
-    DDGS_AVAILABLE = False
-
-try:
     from tools.memory import Memory
     mem = Memory()
     from tools.brain import Brain
@@ -185,7 +178,6 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             elif self.path.startswith('/api/recruiters'):
                 self._handle_get_recruiters()
             elif self.path.startswith('/api/agent_state'): 
-                # --- UPDATED TO INCLUDE LIVE ACTIVITY LOG ---
                 status = {
                     "active": mem.get_agent_state(),
                     "activity": mem.get_system_activity()
@@ -256,29 +248,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(400, "Missing company parameter")
             return
 
-        results = []
-        if DDGS_AVAILABLE:
-            try:
-                # Targeted X-Ray search
-                search_query = f'site:linkedin.com/in "recruiter" OR "talent acquisition" "{company}"'
-                print(f"[SERVER] performing recon scan for: {company}")
-                
-                with DDGS() as ddgs:
-                    # Fetching 5 results
-                    ddgs_results = ddgs.text(search_query, max_results=5)
-                    if ddgs_results:
-                        for r in ddgs_results:
-                            results.append({
-                                "name": r.get('title', 'Unknown Profile').split('|')[0].strip().split('-')[0].strip(),
-                                "title": r.get('body', 'No snippet available')[:100] + "...",
-                                "url": r.get('href', '#')
-                            })
-            except Exception as e:
-                print(f"[SERVER] Recruiter scan error: {e}")
-        else:
-             print("[SERVER] DDGS not available. Returning empty list.")
-
-        self._send_json({"recruiters": results})
+        cached = mem.get_recruiters_for_company(company)
+        self._send_json({"recruiters": cached if cached else[]})
 
     def _handle_save_resume(self, data):
         name = data.get('name')
@@ -382,6 +353,25 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                         self.send_error(500, "Regeneration failed")
                 else: 
                     self.send_error(400, "Missing name")
+            elif self.path == '/api/recruiters/status':
+                data = json.loads(post_data)
+                mem.toggle_recruiter_outreach(data.get('job_id'), data.get('url'), data.get('contacted'))
+                self._send_json({"success": True})
+            elif self.path == '/api/recruiters/add':
+                data = json.loads(post_data)
+                mem.add_manual_recruiter(data.get('job_id'), data.get('url'))
+                self._send_json({"success": True})
+            elif self.path == '/api/outreach/generate':
+                data = json.loads(post_data)
+                job_id = data.get('job_id')
+                jobs = mem.get_jobs(status="ALL")
+                target_job = next((j for j in jobs if j['id'] == job_id), None)
+                if target_job:
+                    msg = brain.generate_outreach(target_job)
+                    mem.update_outreach_message(job_id, msg)
+                    self._send_json({"success": True, "message": msg})
+                else:
+                    self.send_error(404, "Job not found")
             else: 
                 self.send_error(404)
         except Exception as e: 

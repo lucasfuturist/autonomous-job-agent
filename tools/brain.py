@@ -68,7 +68,7 @@ class Brain:
             try:
                 res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
                 data = json.loads(res['message']['content'])
-                return data.get('queries', [])
+                return data.get('queries',[])
             except Exception as e:
                 print(f"[BRAIN] Command Parse Failed: {e}")
                 return [user_input]
@@ -99,8 +99,6 @@ class Brain:
                 return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Role '{pattern}'"}
 
         # --- DATA EXTRACTION & SCORING (ONE PASS, HEAVY MODEL) ---
-        # The Hostile Gatekeeper step has been removed. 
-        # The LLM unconditionally parses the data and returns a fair technical score.
         prompt_extract = f"""
         Role: Precise Data Extraction Engine.
         Task: Analyze the job description and extract technical metadata.
@@ -113,7 +111,7 @@ class Brain:
         RULES:
         1. EXTRACT ONLY what is explicitly stated in the text.
         2. DO NOT include "reasoning" or "comments" as JSON keys. Output RAW JSON only.
-        3. If a field is missing, return null (for ints) or [] (for lists).
+        3. If a field is missing, return null (for ints) or[] (for lists).
         
         SCHEMA:
         - score: int (Rate technical relevance to Python/C++/AI/Robotics from 0 to 10. 0=Retail/Medical, 5=Generic IT/Software, 10=AI/Robotics)
@@ -139,10 +137,10 @@ class Brain:
             "travel_pct_max": 10,
             "clearance_required": "None",
             "itar_ear_restricted": false,
-            "tech_stack_core": ["Python", "AWS", "Docker"],
-            "hardware_physical_tools": [],
+            "tech_stack_core":["Python", "AWS", "Docker"],
+            "hardware_physical_tools":[],
             "yoe_actual": 5,
-            "red_flags": []
+            "red_flags":[]
         }}
         """
         
@@ -170,16 +168,16 @@ class Brain:
         bullet_catalog = {}
         prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nTask: Select the top 15 to 20 relevant bullet IDs. INCLUE adjacent technical context (e.g. if software role, include hardware/robotics context to show systems depth). We want a dense, 2-page resume.\n\nCandidate Bullets:\n"
         
-        fallback_ids = []
+        fallback_ids =[]
         for exp in master.get('experience', []):
-            for i, b in enumerate(exp.get('standardized_bullets', [])):
+            for i, b in enumerate(exp.get('standardized_bullets',[])):
                 bullet_catalog[b['id']] = b['text']
                 prompt_bullets += f"- {b['id']}: {b['text']}\n"
                 if i < 6: fallback_ids.append(b['id'])
                 
-        prompt_bullets += "\nOutput EXACTLY this JSON format and nothing else: {\"selected_ids\": [\"exp_ez_1\", \"exp_stealth_2\"]}"
+        prompt_bullets += "\nOutput EXACTLY this JSON format and nothing else: {\"selected_ids\":[\"exp_ez_1\", \"exp_stealth_2\"]}"
         
-        approved_ids = []
+        approved_ids =[]
         with self.lock:
             try:
                 res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_bullets}], format='json')
@@ -189,7 +187,7 @@ class Brain:
                     if "selected_ids" in data:
                         approved_ids = data["selected_ids"]
                     else:
-                        approved_ids = [k for k, v in data.items() if v is True]
+                        approved_ids =[k for k, v in data.items() if v is True]
                 except json.JSONDecodeError:
                     print(f"[BRAIN] JSON parse failed, deploying Regex Extraction...")
                     approved_ids = list(set(re.findall(r'exp_[a-zA-Z0-9]+_\d+', raw_content)))
@@ -198,14 +196,13 @@ class Brain:
                 
         valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
         
-        # --- FIX: TOTAL TIMELINE GUARANTEE ---
         guaranteed_ids = []
-        for exp in master.get('experience', []):
-            job_bullet_ids = [b['id'] for b in exp.get('standardized_bullets', [])]
+        for exp in master.get('experience',[]):
+            job_bullet_ids = [b['id'] for b in exp.get('standardized_bullets',[])]
             kept_count = sum(1 for j_id in job_bullet_ids if j_id in valid_approved_ids)
             if kept_count < 2:
                 needed = 2 - kept_count
-                missing_ids = [j_id for j_id in job_bullet_ids if j_id not in valid_approved_ids]
+                missing_ids =[j_id for j_id in job_bullet_ids if j_id not in valid_approved_ids]
                 guaranteed_ids.extend(missing_ids[:needed])
                 
         if guaranteed_ids:
@@ -304,7 +301,7 @@ core_competency: "{strategy['core_competency']}"
 ## Relevant Experience
 """
         
-        experiences = master.get('experience', [])
+        experiences = master.get('experience',[])
         try:
             experiences.sort(key=lambda x: 0 if "Founding Systems Engineer" in x.get('title', '') else 1)
         except Exception:
@@ -366,7 +363,45 @@ core_competency: "{strategy['core_competency']}"
             try:
                 res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
                 terms = json.loads(res['message']['content']).get('terms', [])
-                valid_terms = [t for t in terms if t in INITIAL_SEARCH_TERMS]
+                valid_terms =[t for t in terms if t in INITIAL_SEARCH_TERMS]
                 return valid_terms if valid_terms else random.sample(INITIAL_SEARCH_TERMS, 2)
             except: 
-                return []
+                return[]
+
+    def generate_outreach(self, job):
+        print(f"[BRAIN] Generating tailored outreach DM for {job.get('company')}...")
+        company = str(job.get('company', 'your company'))
+        title = str(job.get('title', 'the open role'))
+        tech = "systems engineering"
+        try:
+            parsed_tech = json.loads(job.get('tech_stack_core', '[]'))
+            if parsed_tech: 
+                tech = ", ".join(parsed_tech[:2])
+        except: 
+            pass
+        
+        prompt = f"""
+        Role: Expert Technical Copywriter.
+        Task: Write a concise LinkedIn connection message (Under 250 characters MAXIMUM).
+        
+        Target Company: {company}
+        Target Role: {title}
+        Key Technologies: {tech}
+        Candidate: Lucas, a Systems Engineer building production-grade AI decision platforms.
+        
+        RULES:
+        1. STRICT LENGTH: MUST be under 250 characters total. Do not exceed this.
+        2. NO HALLUCINATION. Do not invent facts or pretend you've used tools you haven't.
+        3. FORMAT: Start exactly with "Hi [Name],\n\n" and end exactly with "\n\nBest,\nLucas".
+        4. TONE: Direct, professional, engineer-to-engineer. No fluff. Get straight to the point about your background alignment.
+        
+        Output valid JSON only: {{ "message": "..." }}
+        """
+        with self.lock:
+            try:
+                res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
+                data = json.loads(res['message']['content'])
+                return data.get('message', "Hi [Name],\n\nI recently applied for your open role and believe my systems engineering background strongly aligns with your team's needs.\n\nBest,\nLucas")
+            except Exception as e:
+                print(f"[BRAIN] Outreach Generation Failed: {e}")
+                return "Hi [Name],\n\nI recently applied for your open role and believe my systems engineering background strongly aligns with your team's needs.\n\nBest,\nLucas"

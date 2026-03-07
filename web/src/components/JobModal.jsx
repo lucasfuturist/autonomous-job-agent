@@ -1,56 +1,61 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus, Users, ScanSearch } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus, Users, ScanSearch, CheckCircle2, Mail, Plus, Copy } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
-  const [resumeContent, setResumeContent] = useState("Loading...");
+  const [msgCopied, setMsgCopied] = useState(false);
+  const[resumeContent, setResumeContent] = useState("Loading...");
   
   const [deploying, setDeploying] = useState(false);
   const [deployed, setDeployed] = useState(false);
   
-  const [regenerating, setRegenerating] = useState(false);
+  const[regenerating, setRegenerating] = useState(false);
   
   // EDIT MODE STATE
-  const [isEditing, setIsEditing] = useState(false);
+  const[isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   
   // RECRUITER STATE
   const [recruiters, setRecruiters] = useState([]);
-  const [loadingRecruiters, setLoadingRecruiters] = useState(false);
+  const[manualRecruiterUrl, setManualRecruiterUrl] = useState("");
+  
+  // OUTREACH MSG STATE
+  const[outreachMsg, setOutreachMsg] = useState("");
+  const[generatingMsg, setGeneratingMsg] = useState(false);
   
   const containerRef = useRef(null);
   const [leftWidth, setLeftWidth] = useState(40);
-  const [centerWidth, setCenterWidth] = useState(30);
+  const[centerWidth, setCenterWidth] = useState(30);
 
   const isStarred = job?.starred === 1 || job?.starred === true;
   const hasResume = job?.selected_resume && job.selected_resume !== "" && job.selected_resume !== "None";
 
   // --- ENRICHED DATA PARSING ---
   const techStack = useMemo(() => {
-    try { return job?.tech_stack_core ? JSON.parse(job.tech_stack_core) : []; } catch { return []; }
+    try { return job?.tech_stack_core ? JSON.parse(job.tech_stack_core) :[]; } catch { return []; }
   }, [job?.tech_stack_core]);
 
   const hardwareStack = useMemo(() => {
     try { return job?.hardware_physical_tools ? JSON.parse(job.hardware_physical_tools) : []; } catch { return []; }
-  }, [job?.hardware_physical_tools]);
+  },[job?.hardware_physical_tools]);
 
   const redFlags = useMemo(() => {
     try { return job?.red_flags ? JSON.parse(job.red_flags) : []; } catch { return []; }
-  }, [job?.red_flags]);
+  },[job?.red_flags]);
 
   const salaryString = useMemo(() => {
     if (!job?.salary_base_min && !job?.salary_base_max) return null;
     const fmt = (n) => n >= 1000 ? `$${Math.round(n/1000)}k` : `$${n}`;
     if (job.salary_base_min && job.salary_base_max) return `${fmt(job.salary_base_min)} - ${fmt(job.salary_base_max)}`;
     return fmt(job.salary_base_min || job.salary_base_max) + "+";
-  }, [job?.salary_base_min, job?.salary_base_max]);
+  },[job?.salary_base_min, job?.salary_base_max]);
 
 
   // --- ACTION HANDLERS ---
   const handleTriageAction = React.useCallback((status) => {
       if (onNext) onNext(); else onClose(); 
       onUpdateStatus(job.id, status);       
-  }, [job?.id, onNext, onClose, onUpdateStatus]);
+  },[job?.id, onNext, onClose, onUpdateStatus]);
 
   const handleCorrection = (status) => {
       onUpdateStatus(job.id, status);
@@ -74,9 +79,9 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [job, onClose, onNext, onPrev, onToggleStar, isStarred, handleTriageAction]);
+  },[job, onClose, onNext, onPrev, onToggleStar, isStarred, handleTriageAction]);
 
-  // --- FETCH RESUME & RECRUITERS ---
+  // --- FETCH RESUME & RECRUITERS & MSG ---
   useEffect(() => {
     if (hasResume) {
         setResumeContent("Loading...");
@@ -89,19 +94,61 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         setResumeContent(null);
     }
     
-    // FETCH RECRUITERS
-    if (job?.company) {
-        setLoadingRecruiters(true);
+    if (job?.recruiters) {
+        try { setRecruiters(JSON.parse(job.recruiters)); } catch(e) { setRecruiters([]); }
+    } else if (job?.company) {
         setRecruiters([]);
         fetch(`/api/recruiters?company=${encodeURIComponent(job.company)}`)
             .then(res => res.json())
-            .then(data => {
-                if(data.recruiters) setRecruiters(data.recruiters);
-            })
-            .catch(e => console.error(e))
-            .finally(() => setLoadingRecruiters(false));
+            .then(data => { if(data.recruiters) setRecruiters(data.recruiters); })
+            .catch(e => console.error(e));
     }
+
+    // Sync local state with DB
+    setOutreachMsg(job?.outreach_message || "");
+
   }, [job, hasResume]);
+
+  // --- ROBUST MSG GEN ---
+  const handleGenerateOutreach = async () => {
+    if (generatingMsg) return;
+    setGeneratingMsg(true);
+    
+    try {
+        const res = await fetch('/api/outreach/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: job.id })
+        });
+        
+        // 1. Check if the server actually recognized the endpoint
+        if (!res.ok) {
+            throw new Error(`Server error ${res.status}. Please make sure you restarted server.py!`);
+        }
+        
+        // 2. Parse the JSON safely
+        const data = await res.json();
+        
+        if (data.success) {
+            setOutreachMsg(data.message);
+            // Optimistic update onto the job object so it doesn't vanish on modal close
+            job.outreach_message = data.message; 
+        } else {
+            alert("Backend returned an error: " + (data.error || "Unknown"));
+        }
+    } catch (e) {
+        console.error("Outreach gen failed:", e);
+        alert("Failed to generate outreach message: " + e.message);
+    } finally {
+        setGeneratingMsg(false);
+    }
+  };
+
+  const copyOutreachMessage = () => {
+      navigator.clipboard.writeText(outreachMsg);
+      setMsgCopied(true);
+      setTimeout(() => setMsgCopied(false), 2000);
+  };
 
   // --- REGENERATE SUMMARY HANDLER ---
   const handleRegenerateSummary = async () => {
@@ -161,9 +208,52 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
   const handleRecruiterRecon = (e) => {
     if (e) e.stopPropagation();
-    const query = `site:linkedin.com/in intitle:("recruiter" OR "talent" OR "acquisition") "${job.company}"`;
+    const query = `site:linkedin.com/in "${job.company}" talent OR recruiter OR hiring`;
     const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
     window.open(url, '_blank');
+  };
+
+  const handleAddRecruiter = async () => {
+      if (!manualRecruiterUrl.trim()) return;
+      const url = manualRecruiterUrl.trim();
+      
+      const newRecruiter = { name: "Manually Added Profile", title: "Recruiter / Talent", url: url, contacted: true };
+      setRecruiters(prev => {
+          if (prev.find(r => r.url === url)) return prev;
+          return[...prev, newRecruiter];
+      });
+      setManualRecruiterUrl("");
+
+      try {
+          await fetch('/api/recruiters/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ job_id: job.id, url: url })
+          });
+      } catch (e) { console.error("Failed to add recruiter", e); }
+  };
+
+  const handleToggleContact = async (url) => {
+    const newRecruiters = recruiters.map(r => {
+        if (r.url === url) return { ...r, contacted: !r.contacted };
+        return r;
+    });
+    setRecruiters(newRecruiters);
+
+    try {
+        const target = newRecruiters.find(r => r.url === url);
+        await fetch('/api/recruiters/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                job_id: job.id,
+                url: url,
+                contacted: target.contacted
+            })
+        });
+    } catch(e) {
+        console.error("Failed to toggle contact status", e);
+    }
   };
 
   if (!job) return null;
@@ -423,24 +513,75 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                     </div>
                 )}
 
-                {/* RECRUITER RECON */}
+                {/* RECRUITER RECON (MANUAL INPUT + OUTREACH) */}
                 <div style={{ background: '#111', border: '1px solid #222', padding: '10px', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '10px', color: '#888', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Users size={12} /> RECRUITER RECON
+                    <div style={{ fontSize: '10px', color: '#888', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Users size={12} /> RECRUITER RECON & OUTREACH
+                        </div>
+                        <button onClick={handleRecruiterRecon} style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', fontWeight: 'bold' }}>
+                            <ScanSearch size={10} /> GOOGLE X-RAY
+                        </button>
                     </div>
-                    {loadingRecruiters ? (
-                        <div style={{ fontSize: '11px', color: '#666' }}>Scanning LinkedIn...</div>
-                    ) : recruiters.length > 0 ? (
+                    
+                    {/* Dynamic Outreach Message Block (AI Generated) */}
+                    <div style={{ background: '#050505', border: '1px solid #333', padding: '10px', borderRadius: '4px', marginBottom: '10px', position: 'relative' }}>
+                        <div style={{ fontSize: '9px', color: '#666', marginBottom: '6px', fontWeight: 'bold' }}>STANDARDIZED DM TEMPLATE (AI GENERATED)</div>
+                        
+                        {outreachMsg ? (
+                            <>
+                                <div style={{ fontSize: '11px', color: '#ccc', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+                                    {outreachMsg}
+                                </div>
+                                <button onClick={copyOutreachMessage} style={{ position: 'absolute', top: '10px', right: '10px', background: msgCopied ? 'var(--accent)' : '#222', border: '1px solid #444', color: msgCopied ? '#000' : '#fff', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', transition: 'all 0.2s' }}>
+                                    {msgCopied ? "COPIED" : "COPY"} {msgCopied ? <Check size={10} /> : <Copy size={10} />}
+                                </button>
+                            </>
+                        ) : (
+                            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+                                <button onClick={handleGenerateOutreach} disabled={generatingMsg} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 15px', borderRadius: '4px', cursor: generatingMsg ? 'wait' : 'pointer', fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
+                                    <BrainCircuit size={12} className={generatingMsg ? "live-dot" : ""} /> 
+                                    {generatingMsg ? "DRAFTING PITCH (32B)..." : "GENERATE DM TEMPLATE"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Manual Entry Form */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+                        <input 
+                            type="text" 
+                            placeholder="Paste LinkedIn URL you messaged..." 
+                            value={manualRecruiterUrl} 
+                            onChange={e => setManualRecruiterUrl(e.target.value)} 
+                            style={{ flexGrow: 1, background: '#000', border: '1px solid #333', color: '#fff', padding: '6px', fontSize: '11px', borderRadius: '3px', outline: 'none' }}
+                        />
+                        <button onClick={handleAddRecruiter} disabled={!manualRecruiterUrl.trim()} style={{ background: manualRecruiterUrl.trim() ? 'var(--accent)' : '#222', color: manualRecruiterUrl.trim() ? '#000' : '#555', border: 'none', padding: '0 10px', borderRadius: '3px', fontWeight: 'bold', fontSize: '11px', cursor: manualRecruiterUrl.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' }}>
+                            <Plus size={12} /> ADD
+                        </button>
+                    </div>
+
+                    {/* Active List */}
+                    {recruiters.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             {recruiters.map((rec, i) => (
-                                <a key={i} href={rec.url} target="_blank" style={{ display: 'block', textDecoration: 'none', background: '#222', padding: '6px', borderRadius: '3px', border: '1px solid #333' }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>{rec.name}</div>
-                                    <div style={{ fontSize: '10px', color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rec.title}</div>
-                                </a>
+                                <div key={i} style={{ display: 'flex', background: '#222', borderRadius: '3px', border: rec.contacted ? '1px solid var(--accent)' : '1px solid #333', overflow: 'hidden' }}>
+                                    <a href={rec.url} target="_blank" style={{ flexGrow: 1, textDecoration: 'none', padding: '6px', display: 'block' }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 'bold', color: rec.contacted ? 'var(--accent)' : '#fff' }}>{rec.name}</div>
+                                        <div style={{ fontSize: '10px', color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rec.url.replace('https://www.', '').replace('linkedin.com/in/', '@/')}</div>
+                                    </a>
+                                    <button 
+                                        onClick={() => handleToggleContact(rec.url)}
+                                        title={rec.contacted ? "Mark as Not Contacted" : "Mark as Contacted"}
+                                        style={{ width: '30px', background: rec.contacted ? 'rgba(0,255,157,0.1)' : '#1a1a1a', borderLeft: '1px solid #333', borderTop: 'none', borderRight: 'none', borderBottom: 'none', color: rec.contacted ? 'var(--accent)' : '#444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                    >
+                                        {rec.contacted ? <CheckCircle2 size={14} /> : <Mail size={14} />}
+                                    </button>
+                                </div>
                             ))}
                         </div>
                     ) : (
-                        <div style={{ fontSize: '11px', color: '#444' }}>No public profiles detected.</div>
+                        <div style={{ fontSize: '11px', color: '#444', textAlign: 'center', padding: '10px 0' }}>No profiles tracked yet.</div>
                     )}
                 </div>
 
@@ -472,9 +613,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                     </a>
                     <button onClick={handleCopyUrl} style={{ background: urlCopied ? 'var(--accent)' : '#111', border: '1px solid #444', color: urlCopied ? '#000' : '#aaa', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}>
                         {urlCopied ? "COPIED!" : "COPY URL"} {urlCopied ? <Check size={14} /> : <Link size={14} />}
-                    </button>
-                    <button onClick={handleRecruiterRecon} style={{ background: '#111', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}>
-                        X-RAY SCAN <ScanSearch size={14} />
                     </button>
                 </div>
 

@@ -29,7 +29,7 @@ class Memory:
                       found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
         # --- MIGRATIONS ---
-        migrations = [
+        migrations =[
             ("starred", "INTEGER DEFAULT 0"),
             ("distance", "REAL"),
             ("salary_base_min", "INTEGER"),
@@ -41,7 +41,9 @@ class Memory:
             ("tech_stack_core", "TEXT"),
             ("hardware_physical_tools", "TEXT"),
             ("yoe_actual", "INTEGER"),
-            ("red_flags", "TEXT")
+            ("red_flags", "TEXT"),
+            ("recruiters", "TEXT"),
+            ("outreach_message", "TEXT")
         ]
 
         for col, dtype in migrations:
@@ -179,6 +181,18 @@ class Memory:
         conn.close()
         return [dict(r) for r in rows]
 
+    def get_recruiters_for_company(self, company):
+        if not company: return None
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE company = ? AND recruiters IS NOT NULL AND recruiters != '' LIMIT 1", (company,)).fetchone()
+        conn.close()
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except:
+                return None
+        return None
+
     def get_global_stats(self):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
@@ -237,10 +251,10 @@ class Memory:
         travel = analysis_data.get('travel_pct_max')
         clearance = analysis_data.get('clearance_required')
         itar = 1 if analysis_data.get('itar_ear_restricted') else 0
-        tech_stack = json.dumps(analysis_data.get('tech_stack_core', []))
-        hardware = json.dumps(analysis_data.get('hardware_physical_tools', []))
+        tech_stack = json.dumps(analysis_data.get('tech_stack_core',[]))
+        hardware = json.dumps(analysis_data.get('hardware_physical_tools',[]))
         yoe = analysis_data.get('yoe_actual')
-        red_flags = json.dumps(analysis_data.get('red_flags', []))
+        red_flags = json.dumps(analysis_data.get('red_flags',[]))
 
         conn = self._get_conn()
         status_logic = f"CASE WHEN status = 'PENDING' AND {score} >= {MIN_SCORE} THEN 'TARGET' WHEN status = 'PENDING' THEN 'REJECTED' ELSE status END"
@@ -264,6 +278,74 @@ class Memory:
         conn.commit()
         conn.close()
         if score >= MIN_SCORE: self.export_dashboard()
+
+    def update_recruiters_for_company(self, company, recruiters_list):
+        if not company or not recruiters_list: return
+        data = json.dumps(recruiters_list)
+        conn = self._get_conn()
+        conn.execute("UPDATE jobs SET recruiters = ? WHERE company = ?", (data, company))
+        conn.commit()
+        conn.close()
+        self.export_dashboard()
+
+    def update_recruiters_by_id(self, job_id, recruiters_list):
+        if not job_id: return
+        data = json.dumps(recruiters_list)
+        conn = self._get_conn()
+        conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (data, job_id))
+        conn.commit()
+        conn.close()
+        self.export_dashboard()
+
+    def toggle_recruiter_outreach(self, job_id, url, contacted):
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+                updated = False
+                for r in recruiters:
+                    if r.get('url') == url:
+                        r['contacted'] = contacted
+                        updated = True
+                if updated:
+                    conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+                    conn.commit()
+            except:
+                pass
+        conn.close()
+        self.export_dashboard()
+
+    def add_manual_recruiter(self, job_id, url):
+        if not job_id or not url: return
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        recruiters = []
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+            except:
+                pass
+        
+        if not any(r.get('url') == url for r in recruiters):
+            recruiters.append({
+                "name": "Manually Added Profile",
+                "title": "Recruiter / Talent",
+                "url": url,
+                "contacted": True
+            })
+            conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+            conn.commit()
+        conn.close()
+        self.export_dashboard()
+        
+    def update_outreach_message(self, job_id, message):
+        if not job_id or not message: return
+        conn = self._get_conn()
+        conn.execute("UPDATE jobs SET outreach_message = ? WHERE id = ?", (message, job_id))
+        conn.commit()
+        conn.close()
+        self.export_dashboard()
 
     def update_status(self, job_id, new_status):
         conn = self._get_conn()
@@ -382,7 +464,7 @@ class Memory:
         return None
 
     def filter_cooldown_terms(self, terms, hours=24):
-        if not terms: return []
+        if not terms: return[]
         conn = self._get_conn()
         placeholders = ','.join('?' for _ in terms)
         query = f'''SELECT term FROM missions WHERE term IN ({placeholders}) AND last_searched > datetime('now', '-{hours} hours')'''
@@ -395,7 +477,7 @@ class Memory:
         conn.row_factory = sqlite3.Row
         rows = conn.execute('''SELECT * FROM jobs WHERE status = 'PENDING' ''').fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        return[dict(r) for r in rows]
 
     def log_mission_results(self, term, found_count, new_count, avg_score=0):
         conn = self._get_conn()
