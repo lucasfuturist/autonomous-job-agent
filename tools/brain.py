@@ -40,6 +40,18 @@ class Brain:
         except:
             return "Error loading rules."
 
+    def _normalize_keys(self, data):
+        """Fixes malformed JSON keys from smaller LLMs (e.g. 'tech_ stack_ core' -> 'tech_stack_core')"""
+        if not isinstance(data, dict):
+            return data
+        
+        normalized = {}
+        for k, v in data.items():
+            # Remove spaces, usually around underscores
+            clean_k = k.replace(" ", "")
+            normalized[clean_k] = v
+        return normalized
+
     def parse_command(self, user_input):
         prompt = f"""
         Role: Mission Commander.
@@ -97,48 +109,42 @@ class Brain:
         prompt = f"""
         Role: Hostile Technical Gatekeeper & Data Extractor.
         
-        CANDIDATE PROFILE:
-        - Deep Tech Systems Engineer (Python, C++, Robotics, AI Infrastructure).
-        - Wants: Founding Engineer, AI Platform, Robotics Middleware, Hard Tech.
-        
-        ANTI-PERSONA (IMMEDIATE REJECT):
-        - NOT a Doctor, Nurse, or Medical Professional.
-        - NOT a Civil Engineer (Construction, HVAC, Concrete).
-        - NOT a Web Developer (Wordpress, Shopify).
-        - NOT IT Support (Helpdesk, SysAdmin).
-        
         JOB TO EVALUATE:
         Title: {job['title']}
         Company: {job['company']}
         Description: {job['description'][:2500]}
         
-        SCORING RUBRIC:
-        - 0-2: MEDICAL/CLINICAL/TRADES. Anything mentioning patients, clinical care, nursing, or manual trades (plumber, mechanic).
-        - 3-5: IRRELEVANT TECH. IT Support, pure frontend web dev, or generic "Business Analyst".
-        - 6-7: SOFT MATCH. Pure backend software with no hardware/AI angle.
-        - 8-10: HARD MATCH. Robotics, AI Systems, LLM Infrastructure, Edge Computing.
+        --------------------------------------------------------
+        PART 1: SCORING (FIT CHECK)
+        Compare against this Candidate Profile:
+        - Deep Tech Systems Engineer (Python, C++, Robotics, AI Infrastructure).
+        - Wants: Founding Engineer, AI Platform, Robotics Middleware, Hard Tech.
+        - Rules: {USER_PREFERENCES} {dynamic_rules}
         
-        DYNAMIC RULES FROM USER:
-        {USER_PREFERENCES}
-        {dynamic_rules}
-        
-        TASK:
-        1. Evaluate candidate fit (score 0-10).
-        2. Extract key structured data points.
-        
-        DATA EXTRACTION SCHEMA:
-        - salary_base_min: int or null (annual base only, no equity/bonus)
-        - salary_base_max: int or null
-        - work_mode: "Remote", "Hybrid", "Onsite"
-        - travel_pct_max: int or null (0-100)
-        - clearance_required: "None", "Secret", "TS/SCI", "Poly"
-        - itar_ear_restricted: boolean (True if US Citizenship/Green Card strictly required due to ITAR/EAR)
-        - tech_stack_core: list[str] (Top 5-7 most important technologies/languages)
-        - hardware_physical_tools: list[str] (PLCs, Oscilloscopes, Soldering, CNC, etc.)
-        - yoe_actual: int (Minimum years of experience required. Infer "Senior" as 5+, "Staff" as 8+ if not stated)
-        - red_flags: list[str] (e.g., "Unpaid", "Contract to Hire", "US Citizen Only" if not ITAR, "Polygraph", "Toxic culture signals")
+        Scoring Rubric (0-10):
+        - 0-2: Medical/Trades/Sales (Immediate Reject).
+        - 3-5: Generic IT/Web Dev (Soft Reject).
+        - 8-10: Perfect match for Robotics/AI Infrastructure.
 
-        Output ONLY valid JSON matching this structure:
+        --------------------------------------------------------
+        PART 2: DATA EXTRACTION (STRICTLY FROM JOB DESCRIPTION)
+        Extract facts ONLY from the Job Description above. 
+        DO NOT use the Candidate Profile for this section. 
+        If the job does not mention a technology, DO NOT list it.
+        
+        Schema:
+        - salary_base_min: int or null (Annual base only).
+        - salary_base_max: int or null.
+        - work_mode: "Remote", "Hybrid", "Onsite", "Unknown".
+        - travel_pct_max: int or null.
+        - clearance_required: "None", "Secret", "TS/SCI", "Poly".
+        - itar_ear_restricted: boolean (True if US Citizenship mentioned for export control).
+        - tech_stack_core: list[str] (Extract top 5 technologies REQUIRED by the JOB. If none, return []).
+        - hardware_physical_tools: list[str] (Extract hardware/tools REQUIRED by the JOB. If none, return []).
+        - yoe_actual: int (Minimum years required. Infer 0 if entry, 5 if senior, 8 if staff).
+        - red_flags: list[str] (Toxic traits, unpaid, citizenship reqs without clearance).
+
+        Output ONLY valid JSON:
         {{
             "score": int,
             "reason": "Short justification...",
@@ -159,7 +165,10 @@ class Brain:
                 res = ollama.chat(model=OLLAMA_MODEL, messages=[
                     {'role': 'user', 'content': prompt}
                 ], format='json')
-                return json.loads(res['message']['content'])
+                
+                raw_data = json.loads(res['message']['content'])
+                return self._normalize_keys(raw_data)
+                
             except Exception as e: 
                 return {"score": 0, "reason": f"Brain Fault ({OLLAMA_MODEL}): {e}"}
 
