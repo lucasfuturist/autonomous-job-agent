@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, TriangleAlert, Cpu, Hammer, DollarSign, Lock } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [urlCopied, setUrlCopied] = useState(false);
@@ -174,7 +174,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         const res = await fetch('/api/deploy', {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
-            // Pass the target role so the PDF generator can update the header
             body: JSON.stringify({ 
                 resume: job.selected_resume,
                 target_role: job.title 
@@ -227,7 +226,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  // --- STYLING HELPERS ---
   let statusColor = 'var(--accent)';
   if (job.status === 'APPLIED') statusColor = 'var(--applied)';
   if (job.status === 'INTERVIEW') statusColor = 'var(--interview)';
@@ -319,9 +317,8 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
             
             <div style={{ padding: '20px', overflowY: 'auto', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 
-                {/* --- NEW: EXTRACTION METRICS --- */}
+                {/* --- EXTRACTION METRICS --- */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                     {/* SALARY */}
                      <div style={{ background: '#111', border: '1px solid #222', padding: '10px', borderRadius: '4px' }}>
                          <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px', display:'flex', alignItems:'center', gap:'4px' }}>
                             <DollarSign size={10} /> COMP RANGE
@@ -330,7 +327,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                             {salaryString || "N/A"}
                          </div>
                      </div>
-                     {/* CLEARANCE */}
                      <div style={{ background: '#111', border: '1px solid #222', padding: '10px', borderRadius: '4px' }}>
                          <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px', display:'flex', alignItems:'center', gap:'4px' }}>
                             <Lock size={10} /> SECURITY CLEARANCE
@@ -345,7 +341,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 {redFlags.length > 0 && (
                     <div style={{ background: 'rgba(255,0,0,0.1)', border: '1px solid var(--danger)', padding: '10px', borderRadius: '4px' }}>
                         <div style={{ fontSize: '11px', color: 'var(--danger)', fontWeight: 'bold', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <TriangleAlert size={12} /> RISK ASSESSMENT (RED FLAGS)
+                            <AlertTriangle size={12} /> RISK ASSESSMENT (RED FLAGS)
                         </div>
                         <ul style={{ margin: 0, paddingLeft: '15px', color: '#faa', fontSize: '12px' }}>
                             {redFlags.map((flag, i) => <li key={i}>{flag}</li>)}
@@ -373,7 +369,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 {hardwareStack.length > 0 && (
                     <div style={{ background: '#111', border: '1px solid #222', padding: '10px', borderRadius: '4px' }}>
                          <div style={{ fontSize: '10px', color: '#888', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Hammer size={12} /> PHYSICAL TOOLS
+                            <PenTool size={12} /> PHYSICAL TOOLS
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                             {hardwareStack.map((tool, i) => (

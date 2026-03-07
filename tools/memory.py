@@ -68,6 +68,22 @@ class Memory:
         conn.commit()
         conn.close()
 
+    # --- AGENT STATE (NEW) ---
+    def get_agent_state(self):
+        state_file = "data/agent_state.json"
+        if not os.path.exists(state_file):
+            self.set_agent_state(False) # Default to offline on fresh boot
+            return False
+        try:
+            with open(state_file, "r") as f:
+                return json.load(f).get("active", False)
+        except:
+            return False
+
+    def set_agent_state(self, is_active):
+        with open("data/agent_state.json", "w") as f:
+            json.dump({"active": is_active}, f)
+
     # --- SIGNALING ---
     def flag_purge_queue(self):
         """Raises a flag to tell the CNS to dump its memory queue."""
@@ -161,7 +177,6 @@ class Memory:
         return [dict(r) for r in rows]
 
     def get_all_mission_logs(self):
-        """Retrieve complete mission history without limits."""
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT * FROM mission_logs ORDER BY run_at DESC").fetchall()
@@ -193,7 +208,6 @@ class Memory:
     def update_job(self, url, score, reason, resume, analysis_data=None):
         if analysis_data is None: analysis_data = {}
         
-        # Deep Extraction
         salary_min = analysis_data.get('salary_base_min')
         salary_max = analysis_data.get('salary_base_max')
         work_mode = analysis_data.get('work_mode')
@@ -244,10 +258,6 @@ class Memory:
         self.export_dashboard()
 
     def bulk_reject(self, purge_list):
-        """
-        Executes a high-speed bulk update for rejected jobs.
-        purge_list: list of tuples -> [(reason, id), (reason, id), ...]
-        """
         if not purge_list: return
         conn = self._get_conn()
         try:
@@ -255,8 +265,6 @@ class Memory:
             conn.commit()
         finally:
             conn.close()
-        
-        # Update the UI feed only once after all writes are done
         self.export_dashboard()
 
     # --- AGENDA & HISTORY ---

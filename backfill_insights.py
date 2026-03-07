@@ -52,11 +52,29 @@ def run_backfill(mode):
         print(f"\n[{i+1}/{len(process_queue)}] Analyzing: {job['company']} - {job['title']}")
         
         try:
-            # A. Evaluate using the single-pass extraction prompt
-            analysis = brain.evaluate(job)
-            
-            # B. ALWAYS print the full JSON payload for debugging
-            print(json.dumps(analysis, indent=2))
+            # --- NEW: FAST FAIL FOR BAD DATA ---
+            desc_check = str(job.get('description', '')).strip().lower()
+            if desc_check in ['', 'nan', 'none'] or len(desc_check) < 20:
+                print("    -> [SKIPPED] Job description is 'nan' or empty (Scraper artifact).")
+                analysis = {
+                    "score": 0,
+                    "reason": "Missing or invalid job description from original scrape.",
+                    "salary_base_min": None,
+                    "salary_base_max": None,
+                    "work_mode": "Unknown",
+                    "travel_pct_max": None,
+                    "clearance_required": "None",
+                    "itar_ear_restricted": False,
+                    "tech_stack_core": [],
+                    "hardware_physical_tools": [],
+                    "yoe_actual": None,
+                    "red_flags": ["Missing Description"]
+                }
+            else:
+                # A. Evaluate using the single-pass extraction prompt
+                analysis = brain.evaluate(job)
+                # B. Print the full JSON payload for debugging
+                print(json.dumps(analysis, indent=2))
             
             score = analysis.get('score', 0)
 
@@ -75,12 +93,11 @@ def run_backfill(mode):
                 success_count += 1
                 
         except BaseException as e:
-            # Catch BaseException and use repr(e) to expose hidden HTTP timeouts
             print(f"    -> [CRITICAL ERROR] Extraction failed for {job['company']}: {repr(e)}")
             print("    -> Skipping to next job to keep batch alive...")
         
-        # Polite delay for local LLM thermal management (allow VRAM to flush)
-        if mode == 'final':
+        # Polite delay for local LLM thermal management (only if we actually used the LLM)
+        if mode == 'final' and analysis.get('reason') != "Missing or invalid job description from original scrape.":
             time.sleep(2.0) 
 
     print(f"\n=== BACKFILL COMPLETE ===")
