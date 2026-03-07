@@ -167,7 +167,8 @@ def analyst_loop(worker_id):
                 print(f"    >>> EVOLVING: Adding {len(filtered)} terms to Agenda")
                 mem.add_to_agenda(filtered, source='EVOLUTION')
         
-        mem.update_job(job['url'], score, reason, resume)
+        # --- UPDATE: PASS FULL ANALYSIS TO MEMORY ---
+        mem.update_job(job['url'], score, reason, resume, analysis_data=analysis)
         job_queue.task_done()
 
 def status_loop():

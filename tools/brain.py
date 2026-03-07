@@ -95,7 +95,7 @@ class Brain:
         dynamic_rules = self._load_dynamic_rules()
 
         prompt = f"""
-        Role: Hostile Technical Gatekeeper.
+        Role: Hostile Technical Gatekeeper & Data Extractor.
         
         CANDIDATE PROFILE:
         - Deep Tech Systems Engineer (Python, C++, Robotics, AI Infrastructure).
@@ -110,7 +110,7 @@ class Brain:
         JOB TO EVALUATE:
         Title: {job['title']}
         Company: {job['company']}
-        Description: {job['description'][:2000]}
+        Description: {job['description'][:2500]}
         
         SCORING RUBRIC:
         - 0-2: MEDICAL/CLINICAL/TRADES. Anything mentioning patients, clinical care, nursing, or manual trades (plumber, mechanic).
@@ -122,7 +122,37 @@ class Brain:
         {USER_PREFERENCES}
         {dynamic_rules}
         
-        Output ONLY valid JSON: {{"score": int, "reason": "Short justification"}}
+        TASK:
+        1. Evaluate candidate fit (score 0-10).
+        2. Extract key structured data points.
+        
+        DATA EXTRACTION SCHEMA:
+        - salary_base_min: int or null (annual base only, no equity/bonus)
+        - salary_base_max: int or null
+        - work_mode: "Remote", "Hybrid", "Onsite"
+        - travel_pct_max: int or null (0-100)
+        - clearance_required: "None", "Secret", "TS/SCI", "Poly"
+        - itar_ear_restricted: boolean (True if US Citizenship/Green Card strictly required due to ITAR/EAR)
+        - tech_stack_core: list[str] (Top 5-7 most important technologies/languages)
+        - hardware_physical_tools: list[str] (PLCs, Oscilloscopes, Soldering, CNC, etc.)
+        - yoe_actual: int (Minimum years of experience required. Infer "Senior" as 5+, "Staff" as 8+ if not stated)
+        - red_flags: list[str] (e.g., "Unpaid", "Contract to Hire", "US Citizen Only" if not ITAR, "Polygraph", "Toxic culture signals")
+
+        Output ONLY valid JSON matching this structure:
+        {{
+            "score": int,
+            "reason": "Short justification...",
+            "salary_base_min": int,
+            "salary_base_max": int,
+            "work_mode": "str",
+            "travel_pct_max": int,
+            "clearance_required": "str",
+            "itar_ear_restricted": bool,
+            "tech_stack_core": ["..."],
+            "hardware_physical_tools": ["..."],
+            "yoe_actual": int,
+            "red_flags": ["..."]
+        }}
         """
         with self.lock:
             try:
@@ -173,12 +203,25 @@ class Brain:
                 
         valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
         
-        # --- FIX: ANTI-GAP GUARANTEE (STEALTH PLATFORM) ---
-        # Ensure at least 3 Stealth Platform bullets are always included to show "Present" employment
-        stealth_ids = [b['id'] for exp in master.get('experience', []) if 'Stealth' in exp.get('company', '') for b in exp.get('standardized_bullets', [])]
-        if not any(sid in valid_approved_ids for sid in stealth_ids) and stealth_ids:
-            print(f"[BRAIN] Anti-Gap Triggered: Injecting Stealth Platform for {company}...")
-            valid_approved_ids.extend(stealth_ids[:3])
+        # --- FIX: TOTAL TIMELINE GUARANTEE ---
+        # Ensure EVERY job in the master JSON is represented by at least 2 bullets
+        # to prevent the LLM from truncating years of overall experience.
+        guaranteed_ids = []
+        for exp in master.get('experience', []):
+            job_bullet_ids = [b['id'] for b in exp.get('standardized_bullets', [])]
+            
+            # Count how many bullets for this specific job the LLM actually kept
+            kept_count = sum(1 for j_id in job_bullet_ids if j_id in valid_approved_ids)
+            
+            if kept_count < 2:
+                needed = 2 - kept_count
+                missing_ids = [j_id for j_id in job_bullet_ids if j_id not in valid_approved_ids]
+                guaranteed_ids.extend(missing_ids[:needed])
+                
+        # Merge the forced IDs into the approved list
+        if guaranteed_ids:
+            print(f"[BRAIN] Anti-Truncation Triggered: Forcing {len(guaranteed_ids)} missing bullets into {company}...")
+            valid_approved_ids.extend(guaranteed_ids)
         
         if len(valid_approved_ids) < 10:
             print("[BRAIN] LLM too strict, injecting fallback density...")
@@ -280,6 +323,7 @@ core_competency: "{strategy['core_competency']}"
 
         for exp in experiences:
             role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
+            # Ensure we respect the overall length limit, but we don't truncate completely
             role_bullets = role_bullets[:12] 
             
             if role_bullets:

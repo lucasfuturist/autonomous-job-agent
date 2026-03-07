@@ -27,12 +27,27 @@ class Memory:
                       selected_resume TEXT, status TEXT DEFAULT 'PENDING',
                       found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
-        # MIGRATIONS
-        try: c.execute("ALTER TABLE jobs ADD COLUMN starred INTEGER DEFAULT 0")
-        except sqlite3.OperationalError: pass 
+        # --- MIGRATIONS ---
+        migrations = [
+            ("starred", "INTEGER DEFAULT 0"),
+            ("distance", "REAL"),
+            ("salary_base_min", "INTEGER"),
+            ("salary_base_max", "INTEGER"),
+            ("work_mode", "TEXT"),
+            ("travel_pct_max", "INTEGER"),
+            ("clearance_required", "TEXT"),
+            ("itar_ear_restricted", "INTEGER"),
+            ("tech_stack_core", "TEXT"),
+            ("hardware_physical_tools", "TEXT"),
+            ("yoe_actual", "INTEGER"),
+            ("red_flags", "TEXT")
+        ]
 
-        try: c.execute("ALTER TABLE jobs ADD COLUMN distance REAL")
-        except sqlite3.OperationalError: pass
+        for col, dtype in migrations:
+            try:
+                c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {dtype}")
+            except sqlite3.OperationalError:
+                pass 
 
         c.execute('''CREATE TABLE IF NOT EXISTS missions
                      (term TEXT PRIMARY KEY, last_searched TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -46,7 +61,7 @@ class Memory:
                      (term TEXT PRIMARY KEY, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                       source TEXT DEFAULT 'SYSTEM', status TEXT DEFAULT 'PENDING')''')
         
-        # NEW: Geocoding Cache
+        # Geocoding Cache
         c.execute('''CREATE TABLE IF NOT EXISTS loc_cache
                      (loc TEXT PRIMARY KEY, distance REAL)''')
 
@@ -175,11 +190,40 @@ class Memory:
         except: return False
         finally: conn.close()
 
-    def update_job(self, url, score, reason, resume):
+    def update_job(self, url, score, reason, resume, analysis_data=None):
+        if analysis_data is None: analysis_data = {}
+        
+        # Deep Extraction
+        salary_min = analysis_data.get('salary_base_min')
+        salary_max = analysis_data.get('salary_base_max')
+        work_mode = analysis_data.get('work_mode')
+        travel = analysis_data.get('travel_pct_max')
+        clearance = analysis_data.get('clearance_required')
+        itar = 1 if analysis_data.get('itar_ear_restricted') else 0
+        tech_stack = json.dumps(analysis_data.get('tech_stack_core', []))
+        hardware = json.dumps(analysis_data.get('hardware_physical_tools', []))
+        yoe = analysis_data.get('yoe_actual')
+        red_flags = json.dumps(analysis_data.get('red_flags', []))
+
         conn = self._get_conn()
         status_logic = f"CASE WHEN status = 'PENDING' AND {score} >= {MIN_SCORE} THEN 'TARGET' WHEN status = 'PENDING' THEN 'REJECTED' ELSE status END"
-        conn.execute(f"UPDATE jobs SET score=?, reason=?, selected_resume=?, status={status_logic} WHERE url=?", 
-                     (score, reason, resume, url))
+        
+        sql = f"""
+            UPDATE jobs SET 
+                score=?, reason=?, selected_resume=?, status={status_logic},
+                salary_base_min=?, salary_base_max=?, work_mode=?, travel_pct_max=?,
+                clearance_required=?, itar_ear_restricted=?, tech_stack_core=?,
+                hardware_physical_tools=?, yoe_actual=?, red_flags=?
+            WHERE url=?
+        """
+        
+        conn.execute(sql, (
+            score, reason, resume,
+            salary_min, salary_max, work_mode, travel,
+            clearance, itar, tech_stack,
+            hardware, yoe, red_flags,
+            url
+        ))
         conn.commit()
         conn.close()
         if score >= MIN_SCORE: self.export_dashboard()
