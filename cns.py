@@ -35,8 +35,10 @@ def hunter_loop():
         if current_state != last_state:
             if current_state: 
                 print("\n[CNS] 🟢 SYSTEM ACTIVE: Resuming scraping and analysis...")
+                mem.set_system_activity("HUNTER", "System Online")
             else: 
                 print("\n[CNS] 🛑 SYSTEM OFFLINE: UI & API running. Scraping paused...")
+                mem.set_system_activity("HUNTER", "System Offline (Paused)")
             last_state = current_state
             
         if not current_state:
@@ -61,6 +63,7 @@ def hunter_loop():
         if current_depth >= MAX_QUEUE_DEPTH and not priority_bypass:
             if hunting_active:
                 print(f"[CNS] 🛑 MATCHING MODE ENGAGED. Backlog ({current_depth}) exceeds limit. Hunter sleeping...")
+                mem.set_system_activity("HUNTER", "Sleeping (Queue Full)")
                 hunting_active = False
             time.sleep(10)
             continue
@@ -84,10 +87,12 @@ def hunter_loop():
                     time.sleep(2) 
                     continue
                 else:
+                    mem.set_system_activity("HUNTER", "Idle (No Targets)")
                     time.sleep(60)
                     continue
 
         print(f"\n[CNS] 🔭 Executing Mission: '{term}'")
+        mem.set_system_activity("HUNTER", f"Sweeping: {term}")
         
         loc = random.choice(LOCATIONS)
         is_remote = (loc == "Remote")
@@ -116,6 +121,7 @@ def hunter_loop():
             total_new += batch_new
             yield_rate = batch_new / len(results)
             print(f"  -> Batch Yield: {batch_new} new / {len(results)} scraped ({yield_rate*100:.1f}%)")
+            mem.set_system_activity("HUNTER", f"Processing Batch: {batch_new} New / {len(results)} Scraped")
             
             if yield_rate < MIN_YIELD_THRESHOLD: break
             offset += SWEEP_BATCH_SIZE
@@ -124,7 +130,7 @@ def hunter_loop():
         if interrupted:
             print(f"[CNS] ⏸️ Mission '{term}' paused by user. Returning to queue...")
             mem.reset_mission_status(term)
-            time.sleep(1) # Short delay before checking state loop again
+            time.sleep(1) 
         else:
             mem.mark_agenda_complete(term)
             mem.log_mission_results(term, total_results, total_new, 0)
@@ -145,6 +151,7 @@ def analyst_loop(worker_id):
             continue
             
         print(f"[CNS-{worker_id}] Processing: {job['company']}")
+        mem.set_system_activity(f"ANALYST-{worker_id}", f"Evaluating {job['company']}")
         
         analysis = brain.evaluate(job)
         score = int(analysis.get('score', 0))
@@ -154,6 +161,7 @@ def analyst_loop(worker_id):
 
         if score >= MIN_SCORE:
             print(f"[CNS-{worker_id}] JIT Assembling Resume for {job['company']}...")
+            mem.set_system_activity(f"ANALYST-{worker_id}", f"Writing Asset for {job['company']}")
             resume, deployment_notes = brain.build_jit_resume(job)
             if deployment_notes:
                 reason = f"{reason}\n\n### DEPLOYMENT SCRIPT:\n{deployment_notes}"

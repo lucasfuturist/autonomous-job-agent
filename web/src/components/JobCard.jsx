@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, DollarSign, ShieldAlert, Cpu, Globe, Briefcase } from 'lucide-react';
+import { ExternalLink, Copy, Check, X, Mic, ArrowRight, RotateCcw, Star, DollarSign, ShieldAlert, Cpu, Globe, Briefcase, Clock } from 'lucide-react';
 
 const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }) => {
   const [showScript, setShowScript] = useState(false);
@@ -19,6 +19,21 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
     if (job.salary_base_min && job.salary_base_max) return `${fmt(job.salary_base_min)} - ${fmt(job.salary_base_max)}`;
     return fmt(job.salary_base_min || job.salary_base_max) + "+";
   }, [job.salary_base_min, job.salary_base_max]);
+
+  const timeAgo = useMemo(() => {
+    const seconds = Math.floor((new Date() - new Date(job.found_at)) / 1000);
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + "y ago";
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + "mo ago";
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + "d ago";
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + "h ago";
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + "m ago";
+    return Math.floor(seconds) + "s ago";
+  }, [job.found_at]);
 
   const hasClearance = job.clearance_required && job.clearance_required !== "None";
 
@@ -98,16 +113,10 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
               <ShieldAlert size={10} /> {job.clearance_required.toUpperCase()}
            </span>
         )}
-
-        {job.work_mode && job.work_mode !== "Unknown" && (
-           <span style={{ background: '#112', color: '#aaf', border: '1px solid #335', padding: '2px 5px', borderRadius: '3px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <Globe size={10} /> {job.work_mode}
-           </span>
-        )}
         
         {renderDistanceBadge()}
         
-        {!compact && <span style={{ background: '#222', color: '#aaa', border: '1px solid #444', padding: '2px 4px', borderRadius: '3px', fontSize: '9px' }}>{job.location}</span>}
+        {!compact && <span style={{ background: '#222', color: '#aaa', border: '1px solid #444', padding: '2px 4px', borderRadius: '3px', fontSize: '9px', display:'flex', alignItems:'center', gap:'3px' }}><Clock size={9}/> {timeAgo}</span>}
       </div>
 
       {/* TECH STACK PILLS */}

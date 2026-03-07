@@ -12,6 +12,7 @@ class Memory:
     def __init__(self):
         self.home_coords = (42.3601, -71.0589) # Boston, MA
         self.purge_flag_file = "data/signal_purge.flag"
+        self.activity_file = "data/system_activity.json"
         self._init_db()
 
     def _get_conn(self):
@@ -68,11 +69,11 @@ class Memory:
         conn.commit()
         conn.close()
 
-    # --- AGENT STATE (NEW) ---
+    # --- AGENT STATE & ACTIVITY ---
     def get_agent_state(self):
         state_file = "data/agent_state.json"
         if not os.path.exists(state_file):
-            self.set_agent_state(False) # Default to offline on fresh boot
+            self.set_agent_state(False)
             return False
         try:
             with open(state_file, "r") as f:
@@ -84,14 +85,37 @@ class Memory:
         with open("data/agent_state.json", "w") as f:
             json.dump({"active": is_active}, f)
 
+    def set_system_activity(self, source, message):
+        """Writes ephemeral status to a JSON file for the UI to poll."""
+        try:
+            data = {
+                "source": source,
+                "message": message,
+                "timestamp": time.time()
+            }
+            # Atomic write not strictly necessary for this visualization but good practice
+            tmp_file = self.activity_file + ".tmp"
+            with open(tmp_file, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp_file, self.activity_file)
+        except Exception:
+            pass # Non-critical logging
+
+    def get_system_activity(self):
+        if not os.path.exists(self.activity_file):
+            return {"source": "SYSTEM", "message": "Idle", "timestamp": time.time()}
+        try:
+            with open(self.activity_file, "r") as f:
+                return json.load(f)
+        except:
+            return {"source": "SYSTEM", "message": "Idle", "timestamp": time.time()}
+
     # --- SIGNALING ---
     def flag_purge_queue(self):
-        """Raises a flag to tell the CNS to dump its memory queue."""
         with open(self.purge_flag_file, 'w') as f:
             f.write("1")
 
     def check_and_clear_purge_flag(self):
-        """Checks if purge is requested, and clears the flag if so."""
         if os.path.exists(self.purge_flag_file):
             try:
                 os.remove(self.purge_flag_file)
@@ -102,8 +126,7 @@ class Memory:
 
     # --- GEOCODING ENGINE ---
     def _haversine(self, lat1, lon1, lat2, lon2):
-        """Calculate the great circle distance in miles between two points on the earth."""
-        R = 3958.8 # Radius of earth in miles
+        R = 3958.8 
         dLat = math.radians(lat2 - lat1)
         dLon = math.radians(lon2 - lon1)
         a = math.sin(dLat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2)**2
@@ -337,7 +360,6 @@ class Memory:
         conn.close()
 
     def reset_mission_status(self, term):
-        """Used when a mission is interrupted by the user (Agent Stop)."""
         conn = self._get_conn()
         conn.execute("UPDATE agenda SET status='PENDING' WHERE term = ?", (term,))
         conn.commit()

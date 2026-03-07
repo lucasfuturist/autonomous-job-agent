@@ -173,7 +173,12 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             elif self.path.startswith('/api/resume'): 
                 self._handle_get_resume()
             elif self.path.startswith('/api/agent_state'): 
-                self._send_json({"active": mem.get_agent_state()})
+                # --- UPDATED TO INCLUDE LIVE ACTIVITY LOG ---
+                status = {
+                    "active": mem.get_agent_state(),
+                    "activity": mem.get_system_activity()
+                }
+                self._send_json(status)
             else: 
                 super().do_GET()
         except Exception as e:

@@ -1,26 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, KanbanSquare, UserCircle2, Power } from 'lucide-react';
+import { LayoutDashboard, KanbanSquare, UserCircle2, Power, Terminal } from 'lucide-react';
 import Feed from './pages/feed';
 import Board from './pages/board';
 import Profile from './pages/profile';
 
 function Layout({ children }) {
   const [isActive, setIsActive] = useState(false);
+  const [activityLog, setActivityLog] = useState({ source: "SYSTEM", message: "Connecting..." });
 
-  // Poll Agent State
+  // Poll Agent State & Activity
   useEffect(() => {
-    fetch('/api/agent_state')
-        .then(res => res.json())
-        .then(data => setIsActive(data.active))
-        .catch(() => {});
-        
-    const interval = setInterval(() => {
-      fetch('/api/agent_state')
-        .then(res => res.json())
-        .then(data => setIsActive(data.active))
-        .catch(() => {});
-    }, 5000);
+    const fetchState = () => {
+        fetch('/api/agent_state')
+            .then(res => res.json())
+            .then(data => {
+                setIsActive(data.active);
+                if (data.activity) setActivityLog(data.activity);
+            })
+            .catch(() => {});
+    };
+
+    fetchState();
+    const interval = setInterval(fetchState, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -52,7 +54,7 @@ function Layout({ children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       {/* Sidebar */}
-      <div style={{ width: '220px', background: '#080808', borderRight: '1px solid #222', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '250px', background: '#080808', borderRight: '1px solid #222', padding: '20px', display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ color: '#fff', fontSize: '14px', borderBottom: '1px solid #333', paddingBottom: '15px', marginTop: 0 }}>
           <span style={{ color: 'var(--accent)', marginRight: '8px' }}>●</span>
           SYSTEM CNS
@@ -68,6 +70,19 @@ function Layout({ children }) {
           <NavLink to="/profile" style={navStyle}>
             <UserCircle2 size={18} /> PROFILE
           </NavLink>
+
+          {/* --- LIVE SYSTEM CONSOLE --- */}
+          <div style={{ marginTop: '20px', background: '#000', border: '1px solid #222', padding: '10px', borderRadius: '4px', fontSize: '11px', fontFamily: 'monospace' }}>
+             <div style={{ color: '#666', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}>
+                <Terminal size={10} /> ACTIVITY LOG
+             </div>
+             <div style={{ color: 'var(--accent)', marginBottom: '2px', fontWeight: 'bold' }}>
+                {">"} {activityLog.source}
+             </div>
+             <div style={{ color: '#ccc', lineHeight: '1.4' }}>
+                {activityLog.message}<span className="blink-cursor">_</span>
+             </div>
+          </div>
         </nav>
 
         {/* --- SYSTEM POWER TOGGLE --- */}
@@ -97,7 +112,7 @@ function Layout({ children }) {
         </div>
 
         <div style={{ fontSize: '10px', color: '#444' }}>
-          v2.2.0 // DECOUPLED UI
+          v2.3.0 // UX POLISH
         </div>
       </div>
 
