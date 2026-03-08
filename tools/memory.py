@@ -8,6 +8,7 @@ import time
 import urllib.parse
 import urllib.request
 from config import DB_FILE, JSON_FEED, MISSIONS_FEED, STATUS_FEED, MIN_SCORE
+from datetime import datetime
 
 class Memory:
     def __init__(self):
@@ -44,7 +45,8 @@ class Memory:
             ("yoe_actual", "INTEGER"),
             ("red_flags", "TEXT"),
             ("recruiters", "TEXT"),
-            ("outreach_message", "TEXT")
+            ("outreach_message", "TEXT"),
+            ("resume_rationale", "TEXT")
         ]
 
         for col, dtype in migrations:
@@ -256,6 +258,13 @@ class Memory:
         conn.commit()
         conn.close()
 
+    def update_resume_rationale(self, job_id, rationale):
+        conn = self._get_conn()
+        conn.execute("UPDATE jobs SET resume_rationale = ? WHERE id = ?", (rationale, job_id))
+        conn.commit()
+        conn.close()
+        self.export_dashboard()
+
     def update_job(self, url, score, reason, resume, analysis_data=None):
         if analysis_data is None: analysis_data = {}
         
@@ -344,29 +353,204 @@ class Memory:
         conn.close()
         self.export_dashboard()
 
-    def add_manual_recruiter(self, job_id, url):
-        if not job_id or not url: return
+    def add_manual_recruiter(self, job_id, contact_info):
+        if not job_id or not contact_info: return
         conn = self._get_conn()
         row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
         recruiters = []
         if row and row[0]:
-            try:
-                recruiters = json.loads(row[0])
-            except:
-                pass
+            try: recruiters = json.loads(row[0])
+            except: pass
         
-        if not any(r.get('url') == url for r in recruiters):
+        url = contact_info.get('url', '').strip()
+        email = contact_info.get('email', '').strip()
+        
+        duplicate = False
+        for r in recruiters:
+            if (url and r.get('url') == url) or (email and r.get('email') == email):
+                duplicate = True
+                break
+                
+        if not duplicate:
+            is_contacted = contact_info.get('contacted', True)
+            contact_date = datetime.utcnow().isoformat() + "Z" if is_contacted else None
+            
+            # Initialize the array
+            contact_dates = contact_info.get('contact_dates', [])
+            if not contact_dates and contact_date:
+                contact_dates = [contact_date]
+
             recruiters.append({
-                "name": "Manually Added Profile",
-                "title": "Recruiter / Talent",
+                "name": contact_info.get('name', '').strip() or "Unknown Contact",
+                "title": contact_info.get('title', '').strip() or "Staff",
                 "url": url,
-                "contacted": True
+                "email": email,
+                "phone": contact_info.get('phone', '').strip(),
+                "contacted": is_contacted,
+                "contacted_date": contact_date,
+                "contact_dates": contact_dates,
+                "message_sent": contact_info.get('message_sent', '').strip(),
+                "history": contact_info.get('history', '').strip(),
+                "replied": False
             })
             conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
             conn.commit()
         conn.close()
         self.export_dashboard()
+
+    def toggle_recruiter_outreach(self, job_id, url_or_email, contacted):
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+                updated = False
+                for r in recruiters:
+                    if r.get('url') == url_or_email or r.get('email') == url_or_email:
+                        r['contacted'] = contacted
+                        if contacted:
+                            new_date = datetime.utcnow().isoformat() + "Z"
+                            r['contacted_date'] = new_date
+                            dates = r.get('contact_dates', [])
+                            if not isinstance(dates, list): dates = []
+                            dates.append(new_date)
+                            r['contact_dates'] = dates
+                        else:
+                            r['contacted_date'] = None
+                        updated = True
+                if updated:
+                    conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+                    conn.commit()
+            except: pass
+        conn.close()
+        self.export_dashboard()
+
+    def update_contact(self, job_id, old_identifier, new_contact_data):
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+                for i, r in enumerate(recruiters):
+                    if r.get('url') == old_identifier or r.get('email') == old_identifier:
+                        
+                        dates = new_contact_data.get('contact_dates', r.get('contact_dates', []))
+                        if not isinstance(dates, list): dates = []
+                        
+                        # Sync backend dates with frontend state
+                        if len(dates) > 0:
+                            sorted_dates = sorted(dates)
+                            new_contact_data['contacted_date'] = sorted_dates[-1]
+                            new_contact_data['contacted'] = True
+                        else:
+                            new_contact_data['contacted_date'] = None
+                            new_contact_data['contacted'] = False
+                            
+                        new_contact_data['contact_dates'] = dates
+                        recruiters[i] = new_contact_data
+                        break
+                conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+                conn.commit()
+            except Exception as e: 
+                print(f"[MEMORY] Contact update failed: {e}")
+        conn.close()
+        self.export_dashboard()
+
+    def toggle_contact_reply(self, job_id, url_or_email, replied):
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+                updated = False
+                for r in recruiters:
+                    if r.get('url') == url_or_email or r.get('email') == url_or_email:
+                        r['replied'] = replied
+                        updated = True
+                if updated:
+                    conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+                    conn.commit()
+            except: pass
+        conn.close()
+        self.export_dashboard()
+
+    def toggle_recruiter_outreach(self, job_id, url_or_email, contacted):
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+                updated = False
+                for r in recruiters:
+                    # Match on either URL or Email since we expanded the fields
+                    if r.get('url') == url_or_email or r.get('email') == url_or_email:
+                        r['contacted'] = contacted
+                        r['contacted_date'] = datetime.utcnow().isoformat() + "Z" if contacted else None
+                        updated = True
+                if updated:
+                    conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+                    conn.commit()
+            except: pass
+        conn.close()
+        self.export_dashboard()
+
+    def get_all_contacts(self):
+        """Extracts and flattens all recruiters from all jobs for the Network page."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        # Added 'url' to the SELECT statement
+        rows = conn.execute("SELECT id, company, title, url, recruiters FROM jobs WHERE recruiters IS NOT NULL AND recruiters != '[]'").fetchall()
+        conn.close()
         
+        network = []
+        for row in rows:
+            try:
+                recs = json.loads(row['recruiters'])
+                for r in recs:
+                    # Inject job context into the contact record
+                    r['job_id'] = row['id']
+                    r['company'] = row['company']
+                    r['job_title'] = row['title']
+                    r['job_url'] = row['url'] # <-- Injected Job URL
+                    network.append(r)
+            except: pass
+        return network
+    
+    def get_company_profile(self, company):
+        """Fetches all jobs associated with a specific company."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        # Sorts by status (APPLIED/INTERVIEW first) and then by score
+        rows = conn.execute("SELECT * FROM jobs WHERE company = ? ORDER BY status ASC, score DESC", (company,)).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def update_contact(self, job_id, old_identifier, new_contact_data):
+        conn = self._get_conn()
+        row = conn.execute("SELECT recruiters FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and row[0]:
+            try:
+                recruiters = json.loads(row[0])
+                for i, r in enumerate(recruiters):
+                    # Match on the old URL or old Email to find the right record to update
+                    if r.get('url') == old_identifier or r.get('email') == old_identifier:
+                        # Ensure contacted_date exists if it was just marked contacted
+                        if new_contact_data.get('contacted') and not r.get('contacted'):
+                            new_contact_data['contacted_date'] = datetime.utcnow().isoformat() + "Z"
+                        elif not new_contact_data.get('contacted'):
+                            new_contact_data['contacted_date'] = None
+                        else:
+                            new_contact_data['contacted_date'] = r.get('contacted_date')
+                            
+                        recruiters[i] = new_contact_data
+                        break
+                conn.execute("UPDATE jobs SET recruiters = ? WHERE id = ?", (json.dumps(recruiters), job_id))
+                conn.commit()
+            except Exception as e: 
+                print(f"[MEMORY] Contact update failed: {e}")
+        conn.close()
+        self.export_dashboard()
+    
     def update_outreach_message(self, job_id, message):
         if not job_id or not message: return
         conn = self._get_conn()

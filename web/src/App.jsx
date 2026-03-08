@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, KanbanSquare, UserCircle2, Power, Terminal } from 'lucide-react';
+import { LayoutDashboard, KanbanSquare, UserCircle2, Power, Terminal, Users } from 'lucide-react';
 import Feed from './pages/feed';
 import Board from './pages/board';
 import Profile from './pages/profile';
+import Network from './pages/network'; // <-- Added Network Import
 
 function Layout({ children }) {
   const [isActive, setIsActive] = useState(false);
@@ -23,7 +24,6 @@ function Layout({ children }) {
                 if (data.activity) {
                     setActivityLog(data.activity);
                 } else {
-                    // Fallback if backend is sending old format
                     setActivityLog({ source: "SYSTEM", message: "Waiting for signal..." });
                 }
             })
@@ -79,6 +79,9 @@ function Layout({ children }) {
           </NavLink>
           <NavLink to="/board" style={navStyle}>
             <KanbanSquare size={18} /> WAR ROOM
+          </NavLink>
+          <NavLink to="/network" style={navStyle}> {/* <-- Added Network Link */}
+            <Users size={18} /> NETWORK
           </NavLink>
           <NavLink to="/profile" style={navStyle}>
             <UserCircle2 size={18} /> PROFILE
@@ -144,6 +147,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/board" element={<Board />} />
+          <Route path="/network" element={<Network />} /> {/* <-- Added Network Route */}
           <Route path="/profile" element={<Profile />} />
         </Routes>
       </Layout>

@@ -268,11 +268,27 @@ def perform_summary_regen(filename):
 
 class CRMHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
-        if "OPTIONS" not in args[0]:
-            sys.stderr.write("%s - - [%s] %s\n" %
-                             (self.address_string(),
-                              self.log_date_time_string(),
-                              format%args))
+        # Convert args[0] to string so the server doesn't crash when logging HTTP error codes (like 404)
+        request_line = str(args[0])
+        
+        # Endpoints that are polled constantly by the React frontend
+        noisy_endpoints = [
+            "OPTIONS",
+            "GET /api/agent_state",
+            "GET /api/jobs",
+            "GET /api/stats",
+            "GET /data/status.json"
+        ]
+        
+        # Suppress the log if the request contains any of the noisy endpoints
+        if any(noisy in request_line for noisy in noisy_endpoints):
+            return
+
+        # Otherwise, log normally
+        sys.stderr.write("%s - - [%s] %s\n" %
+                         (self.address_string(),
+                          self.log_date_time_string(),
+                          format % args))
 
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -304,6 +320,19 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_resume()
             elif self.path.startswith('/api/recruiters'):
                 self._handle_get_recruiters()
+            elif self.path.startswith('/api/network'):
+                self._send_json(mem.get_all_contacts())
+            elif self.path == '/api/intel/rationale':
+                data = json.loads(post_data)
+                mem.update_resume_rationale(data.get('id'), data.get('rationale'))
+                self._send_json({"success": True})
+            elif self.path.startswith('/api/company_profile'):
+                query_components = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                company = query_components.get('company', [''])[0]
+                if company:
+                    self._send_json({"jobs": mem.get_company_profile(company)})
+                else:
+                    self.send_error(400, "Missing company parameter")
             elif self.path.startswith('/api/agent_state'): 
                 status = {
                     "active": mem.get_agent_state() if mem else False,
@@ -545,10 +574,22 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 data = json.loads(post_data)
                 mem.toggle_recruiter_outreach(data.get('job_id'), data.get('url'), data.get('contacted'))
                 self._send_json({"success": True})
+                
             elif self.path == '/api/recruiters/add':
                 data = json.loads(post_data)
-                mem.add_manual_recruiter(data.get('job_id'), data.get('url'))
+                mem.add_manual_recruiter(data.get('job_id'), data.get('contact'))
                 self._send_json({"success": True})
+                
+            elif self.path == '/api/recruiters/reply':
+                data = json.loads(post_data)
+                mem.toggle_contact_reply(data.get('job_id'), data.get('url'), data.get('replied'))
+                self._send_json({"success": True})
+                
+            elif self.path == '/api/recruiters/update':
+                data = json.loads(post_data)
+                mem.update_contact(data.get('job_id'), data.get('old_id'), data.get('contact'))
+                self._send_json({"success": True})
+                
             elif self.path == '/api/outreach/generate':
                 data = json.loads(post_data)
                 job_id = data.get('job_id')

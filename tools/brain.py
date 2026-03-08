@@ -424,7 +424,7 @@ core_competency: "{strategy['core_competency']}"
                 project_section += "\n"
         
         if project_section:
-            md_content += "## Selected Engineering Architectures\n\n" + project_section
+            md_content += "## Selected Projects\n\n" + project_section
 
         CATEGORY_LABELS = {
             "programming_languages": "Programming Languages",
