@@ -1,3 +1,4 @@
+# tools/server.py
 import http.server
 import socketserver
 import sys
@@ -9,16 +10,24 @@ import glob
 import shutil
 import re
 import urllib.parse
+import time
 
-# --- CRITICAL PATH FIX: MUST BE BEFORE LOCAL IMPORTS ---
+# --- PATH SETUP ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-import ollama 
-from config import PORT, MD_FOLDER, HEAVY_MODEL
+# --- CONFIG & EXTERNAL IMPORTS ---
+try:
+    import ollama 
+    from config import PORT, MD_FOLDER, HEAVY_MODEL
+except ImportError as e:
+    print(f"\n[SERVER] 🛑 CRITICAL IMPORT ERROR: {e}")
+    print("Ensure you are running from the project root and have dependencies installed.\n")
+    sys.exit(1)
 
+# --- PDF GENERATION SUPPORT ---
 try:
     import markdown2
     from xhtml2pdf import pisa
@@ -27,39 +36,140 @@ except ImportError:
     print("[SERVER] ⚠️  PDF libs missing. Run: 'pip install markdown2 xhtml2pdf'")
     PDF_ENABLED = False
 
-try:
-    from tools.memory import Memory
-    mem = Memory()
-    from tools.brain import Brain
-    brain = Brain()
-except Exception as e:
-    print(f"[SERVER] ⚠️ CRITICAL: Could not load Memory/Brain module.\nError: {e}")
-    traceback.print_exc()
+# --- CORE SUBSYSTEMS ---
+mem = None
+brain = None
+
+def init_subsystems():
+    global mem, brain
+    print("[SERVER] Initializing Memory & Brain subsystems...")
+    try:
+        from tools.memory import Memory
+        from tools.brain import Brain
+        
+        mem = Memory()
+        mem.get_agenda_status() 
+        brain = Brain()
+        print("[SERVER] ✅ Subsystems active.")
+    except Exception as e:
+        print(f"\n[SERVER] 🛑 FATAL SUBSYSTEM ERROR: {e}")
+        traceback.print_exc()
+        print("[SERVER] Server cannot start without Memory/Brain. Exiting.")
+        os._exit(1)
 
 FEEDBACK_FILE = "data/tactical_feedback.txt"
 DEPLOY_FOLDER = "data/deployments"
 
+# Ultra-Compressed CSS for strict 1-page limits
 RESUME_CSS = """
 <style>
-    @page { size: letter; margin: 0.5in; margin-top: 0.5in; margin-bottom: 0.5in; }
-    body { font-family: 'Calibri', 'Carlito', 'Helvetica', 'Arial', sans-serif; font-size: 10.5pt; line-height: 1.35; color: #000; }
-    .header-block { text-align: center; margin-bottom: 12px; }
-    .name-text { font-family: 'Calibri', 'Carlito', 'Helvetica', 'Arial', sans-serif; font-size: 18pt; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #000; }
-    .target-title-box { font-size: 11pt; font-weight: bold; border-top: 1.5pt solid #000; border-bottom: 1.5pt solid #000; padding-top: 4px; padding-bottom: 4px; margin-bottom: 6px; width: 100%; }
-    .contact-text { font-size: 10pt; font-weight: normal; margin-top: 4px; }
+    @page { 
+        size: letter; 
+        margin: 0.2in 0.3in; /* Tighter vertical bounds to capture orphans */
+    }
+    body { 
+        font-family: 'Calibri', 'Carlito', 'Helvetica', 'Arial', sans-serif; 
+        font-size: 8.5pt; /* Reduced by 0.5pt to ensure 1-page fit */
+        line-height: 1.1; 
+        color: #000; 
+    }
+    .header-block { text-align: center; margin-bottom: 4px; }
+    
+    .name-text { 
+        font-family: 'Calibri', 'Carlito', 'Helvetica', 'Arial', sans-serif; 
+        font-size: 13pt; 
+        font-weight: bold; 
+        text-transform: uppercase; 
+        margin-bottom: 2px; 
+        color: #000;
+        letter-spacing: 1px;
+    }
+    
+    .target-title-box { 
+        font-size: 9pt; 
+        font-weight: bold; 
+        margin-bottom: 2px; 
+        width: 100%; 
+        white-space: nowrap; 
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .contact-text { 
+        font-size: 8.5pt; 
+        font-weight: normal; 
+        margin-top: 0px; 
+        padding-bottom: 4px;
+        border-bottom: 1pt solid #000; 
+        margin-bottom: 4px;
+    }
+    
     a { text-decoration: none; color: #000; }
-    h2 { font-family: 'Calibri', 'Carlito', 'Helvetica', 'Arial', sans-serif; font-size: 12pt; font-weight: bold; text-transform: uppercase; margin-top: 15px; margin-bottom: 8px; border-bottom: 1pt solid #000; padding-bottom: 2px; }
-    .entry-table { width: 100%; margin-top: 8px; margin-bottom: 2px; border: none; }
-    .left-cell { text-align: left; font-weight: bold; font-size: 11pt; vertical-align: bottom; }
-    .right-cell { text-align: right; font-weight: normal; font-size: 10.5pt; vertical-align: bottom; white-space: nowrap; }
-    p { margin-top: 0; margin-bottom: 4px; text-align: justify; }
-    ul { margin-top: 2px; margin-bottom: 8px; padding-left: 12px; }
-    li { margin-bottom: 3px; } 
+    
+    /* Section Headers */
+    h2 { 
+        font-size: 9.5pt; 
+        font-weight: bold; 
+        text-transform: uppercase; 
+        margin-top: 3px; 
+        margin-bottom: 2px; 
+        border-bottom: 1pt solid #000; 
+        padding-bottom: 1px; 
+    }
+    
+    /* Fixed: Table-based alignment locked to margins */
+    .entry-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        margin-top: 4px; 
+        margin-bottom: 0px; 
+        table-layout: fixed; 
+    }
+    .left-cell { 
+        text-align: left; 
+        font-weight: bold; 
+        font-size: 9pt; 
+        vertical-align: bottom; 
+        width: 80%; 
+        padding-right: 5px; 
+    }
+    .right-cell { 
+        text-align: right; 
+        font-weight: normal; 
+        font-size: 8.5pt; 
+        vertical-align: bottom; 
+        width: 20%; 
+        white-space: nowrap; 
+    }
+    
+    /* Project Names */
+    .project-header { 
+        font-weight: bold; 
+        font-size: 9pt; 
+        margin-top: 4px; 
+        margin-bottom: 0px; 
+        white-space: nowrap; 
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    p { margin-top: 0; margin-bottom: 2px; text-align: left; }
+    
+    /* Bullet points */
+    ul { 
+        margin-top: 1px; 
+        margin-bottom: 0px; 
+        padding-left: 12px; 
+    }
+    li { 
+        margin-bottom: 0px; 
+        text-align: left; 
+    } 
+    
     strong { font-weight: bold; }
     .keep-together { page-break-inside: avoid; }
 </style>
 """
-
 CONTACT_INFO = """Boston, MA | (904) 304-2890 | <a href="mailto:lucas@lucasmougeot.ai">lucas@lucasmougeot.ai</a> | <a href="https://www.lucasmougeot.ai">lucasmougeot.ai</a>"""
 DEFAULT_COMPETENCY = "AI Platform & Deterministic LLM Infrastructure"
 
@@ -94,11 +204,21 @@ def convert_to_pdf(md_path, output_path, target_role_arg=None):
             full_text = match.group(1)
             date_match = re.search(r'\(([^)]+)\)$', full_text)
             if date_match:
-                date_text = date_match.group(1)
-                title_text = full_text[:date_match.start()].strip()
-                return f"""<div class="keep-together"><table class="entry-table"><tr><td class="left-cell">{title_text}</td><td class="right-cell">{date_text}</td></tr></table>""" 
-            else: return f'<div class="entry-header"><strong>{full_text}</strong></div>'
-
+                date_str = date_match.group(1)
+                title_str = full_text[:date_match.start()].strip()
+                return (
+                    f'<div class="keep-together">'
+                    f'  <table class="entry-table">'
+                    f'    <tr>'
+                    f'      <td class="left-cell">{title_str}</td>'
+                    f'      <td class="right-cell">{date_str}</td>'
+                    f'    </tr>'
+                    f'  </table>'
+                    f'</div>'
+                )
+            else: 
+                return f'<div class="project-header">{full_text}</div>'
+            
         html_body = re.sub(r'<h3>(.*?)</h3>', header_replacer, html_body)
 
         full_html = f"""<html><head><meta charset="utf-8">{RESUME_CSS}</head><body><div class="header-block"><div class="name-text">{name}</div><div class="target-title-box">{header_title}</div><div class="contact-text">{CONTACT_INFO}</div></div>{html_body}</body></html>"""
@@ -147,7 +267,12 @@ def perform_summary_regen(filename):
     except Exception as e: return None
 
 class CRMHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format, *args): pass
+    def log_message(self, format, *args):
+        if "OPTIONS" not in args[0]:
+            sys.stderr.write("%s - - [%s] %s\n" %
+                             (self.address_string(),
+                              self.log_date_time_string(),
+                              format%args))
 
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -161,7 +286,9 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path.startswith('/api/jobs'): 
+            if self.path.startswith('/api/health'):
+                self._send_json({"status": "ok", "time": time.time()})
+            elif self.path.startswith('/api/jobs'): 
                 self._handle_get_jobs()
             elif self.path.startswith('/api/stats'): 
                 self._handle_get_stats()
@@ -179,14 +306,16 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_recruiters()
             elif self.path.startswith('/api/agent_state'): 
                 status = {
-                    "active": mem.get_agent_state(),
-                    "activity": mem.get_system_activity()
+                    "active": mem.get_agent_state() if mem else False,
+                    "activity": mem.get_system_activity() if mem else {"source": "SYSTEM", "message": "Memory Offline"}
                 }
                 self._send_json(status)
             else: 
                 super().do_GET()
         except Exception as e:
-            self.send_error(500)
+            print(f"[SERVER] Error in GET {self.path}: {e}")
+            traceback.print_exc()
+            self.send_error(500, str(e))
 
     def _handle_get_jobs(self):
         status_filter = None
@@ -223,7 +352,10 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(400, "Missing name parameter")
             return
         query = self.path.split("?")[1]
-        name_param = [p.split("=")[1] for p in query.split("&") if p.startswith("name=")][0]
+        name_param =[p.split("=")[1] for p in query.split("&") if p.startswith("name=")][0]
+        if not name_param:
+             self.send_error(400, "Empty name parameter")
+             return
         clean_name = os.path.basename(name_param) 
         target_path = os.path.join(MD_FOLDER, f"{clean_name}.md")
         content = ""
@@ -353,6 +485,62 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                         self.send_error(500, "Regeneration failed")
                 else: 
                     self.send_error(400, "Missing name")
+
+            elif self.path == '/api/regenerate_resume':
+                data = json.loads(post_data)
+                job_id = data.get('job_id')
+                if job_id:
+                    jobs = mem.get_jobs(status="ALL")
+                    target_job = next((j for j in jobs if j['id'] == job_id), None)
+                    if target_job:
+                        try:
+                            filename, _ = brain.build_jit_resume(target_job)
+                            clean_name = os.path.basename(filename)
+                            if not clean_name.endswith('.md'): clean_name += '.md'
+                            filepath = os.path.join(MD_FOLDER, clean_name)
+                            if os.path.exists(filepath):
+                                with open(filepath, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                self._send_json({"success": True, "content": content, "filename": clean_name})
+                            else:
+                                self.send_error(500, "Generated file not found on disk.")
+                        except Exception as e:
+                            print(f"[SERVER] Regeneration error: {e}")
+                            self.send_error(500, f"Regeneration failed: {e}")
+                    else:
+                        self.send_error(404, "Job not found")
+                else:
+                    self.send_error(400, "Missing job_id")
+            
+            elif self.path == '/api/intel/update':
+                data = json.loads(post_data)
+                job_id = data.get('id')
+                desc = data.get('description')
+                
+                if job_id and desc:
+                    try:
+                        mem.update_job_description(job_id, desc)
+                        job = mem.get_job_by_id(job_id)
+                        
+                        if job:
+                            analysis = brain.extract_metadata(desc, job['title'], job['company'])
+                            
+                            new_score = int(analysis.get('score', 0))
+                            reason = analysis.get('reason', 'Updated via manual edit')
+                            
+                            mem.update_job(job['url'], new_score, reason, job['selected_resume'], analysis)
+                            
+                            updated_job = mem.get_job_by_id(job_id)
+                            self._send_json({"success": True, "job": dict(updated_job)})
+                        else:
+                             self.send_error(404, "Job not found after update")
+                    except Exception as e:
+                        print(f"[SERVER] Intel update failed: {e}")
+                        traceback.print_exc()
+                        self.send_error(500, f"Update failed: {e}")
+                else:
+                    self.send_error(400, "Missing id or description")
+
             elif self.path == '/api/recruiters/status':
                 data = json.loads(post_data)
                 mem.toggle_recruiter_outreach(data.get('job_id'), data.get('url'), data.get('contacted'))
@@ -375,6 +563,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
             else: 
                 self.send_error(404)
         except Exception as e: 
+            print(f"[SERVER] Error in POST {self.path}: {e}")
+            traceback.print_exc()
             self.send_error(500)
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -384,14 +574,17 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 def start_server():
     if os.path.basename(os.getcwd()) == "tools": os.chdir("..")
+    
     if not os.path.exists("data"): os.makedirs("data")
     if not os.path.exists(DEPLOY_FOLDER): os.makedirs(DEPLOY_FOLDER)
     if not os.path.exists(FEEDBACK_FILE): 
         with open(FEEDBACK_FILE, "w") as f: f.write("")
 
+    init_subsystems()
+
     try:
         with ThreadedHTTPServer(("0.0.0.0", PORT), CRMHandler) as httpd:
-            print(f"[SERVER] API Online (Threaded): http://localhost:{PORT}")
+            print(f"[SERVER] 🚀 API Online (Threaded): http://localhost:{PORT}")
             httpd.serve_forever()
     except Exception as e:
-        print(f"[SERVER] ❌ FAILED TO BIND: {e}")
+        print(f"[SERVER] ❌ FAILED TO BIND to Port {PORT}: {e}")

@@ -1,3 +1,4 @@
+# tools/memory.py
 import sqlite3
 import json
 import os
@@ -180,6 +181,13 @@ class Memory:
             rows = conn.execute("SELECT * FROM jobs WHERE status IN ('TARGET', 'APPLIED', 'INTERVIEW', 'OFFER') ORDER BY found_at DESC").fetchall()
         conn.close()
         return [dict(r) for r in rows]
+    
+    def get_job_by_id(self, job_id):
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
 
     def get_recruiters_for_company(self, company):
         if not company: return None
@@ -241,6 +249,12 @@ class Memory:
             return True
         except: return False
         finally: conn.close()
+        
+    def update_job_description(self, job_id, description):
+        conn = self._get_conn()
+        conn.execute("UPDATE jobs SET description = ? WHERE id = ?", (description, job_id))
+        conn.commit()
+        conn.close()
 
     def update_job(self, url, score, reason, resume, analysis_data=None):
         if analysis_data is None: analysis_data = {}
@@ -257,27 +271,41 @@ class Memory:
         red_flags = json.dumps(analysis_data.get('red_flags',[]))
 
         conn = self._get_conn()
-        status_logic = f"CASE WHEN status = 'PENDING' AND {score} >= {MIN_SCORE} THEN 'TARGET' WHEN status = 'PENDING' THEN 'REJECTED' ELSE status END"
+        
+        # We only update status logic if score is provided and above threshold. 
+        # If score is None (partial update), we skip status logic.
+        status_update_sql = ""
+        if score is not None:
+             status_update_sql = f", status = CASE WHEN status = 'PENDING' AND {score} >= {MIN_SCORE} THEN 'TARGET' WHEN status = 'PENDING' THEN 'REJECTED' ELSE status END"
         
         sql = f"""
             UPDATE jobs SET 
-                score=?, reason=?, selected_resume=?, status={status_logic},
+                reason=?, selected_resume=?,
                 salary_base_min=?, salary_base_max=?, work_mode=?, travel_pct_max=?,
                 clearance_required=?, itar_ear_restricted=?, tech_stack_core=?,
                 hardware_physical_tools=?, yoe_actual=?, red_flags=?
+                {", score=?" if score is not None else ""}
+                {status_update_sql}
             WHERE url=?
         """
         
-        conn.execute(sql, (
-            score, reason, resume,
+        params = [
+            reason, resume,
             salary_min, salary_max, work_mode, travel,
             clearance, itar, tech_stack,
-            hardware, yoe, red_flags,
-            url
-        ))
+            hardware, yoe, red_flags
+        ]
+        
+        if score is not None:
+            params.append(score)
+            
+        params.append(url)
+        
+        conn.execute(sql, tuple(params))
         conn.commit()
         conn.close()
-        if score >= MIN_SCORE: self.export_dashboard()
+        if score is not None and score >= MIN_SCORE: self.export_dashboard()
+        else: self.export_dashboard() # Always export on manual updates
 
     def update_recruiters_for_company(self, company, recruiters_list):
         if not company or not recruiters_list: return

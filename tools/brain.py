@@ -1,3 +1,4 @@
+# tools/brain.py
 import ollama
 import json
 import os
@@ -41,10 +42,8 @@ class Brain:
             return "Error loading rules."
 
     def _normalize_keys(self, data):
-        """Fixes malformed JSON keys from smaller LLMs."""
         if not isinstance(data, dict):
             return data
-        
         normalized = {}
         for k, v in data.items():
             clean_k = k.replace(" ", "")
@@ -60,9 +59,9 @@ class Brain:
         CRITICAL RULE: Combine ROLE and LOCATION into single strings.
         
         BAD OUTPUT: ["Robotics", "Seattle", "Jobs"]
-        GOOD OUTPUT: ["Robotics Engineer Seattle", "Robotics Engineer Austin", "Mid-Level Systems Engineer Seattle"]
+        GOOD OUTPUT:["Robotics Engineer Seattle", "Robotics Engineer Austin", "Mid-Level Systems Engineer Seattle"]
         
-        Output JSON: {{"queries": ["term1", "term2", "term3"]}}
+        Output JSON: {{"queries":["term1", "term2", "term3"]}}
         """
         with self.lock:
             try:
@@ -71,7 +70,7 @@ class Brain:
                 return data.get('queries',[])
             except Exception as e:
                 print(f"[BRAIN] Command Parse Failed: {e}")
-                return [user_input]
+                return[user_input]
 
     def generate_initial_strategy(self):
         print("[BRAIN] Loading Curated Master Target List...")
@@ -79,34 +78,15 @@ class Brain:
         random.shuffle(terms)
         return terms
     
-    def evaluate(self, job):
-        # --- 0. FAST FAIL: HEURISTICS ---
-        location = job.get('location', '')
-        if location:
-            mem_instance = self.MemoryClass()
-            distance = mem_instance.get_or_fetch_distance(location)
-            if distance is not None and distance != -1.0 and distance > MAX_COMMUTE_MILES:
-                return {"score": 0, "reason": f"Geofence Reject: {distance} miles away."}
-
-        title_lower = str(job.get('title', '')).lower()
-        company_lower = str(job.get('company', '')).lower()
-        
-        for pattern in COMPANY_BLACKLIST:
-            if re.search(pattern, company_lower):
-                return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Company '{pattern}'"}
-        for pattern in TITLE_BLACKLIST:
-            if re.search(pattern, title_lower):
-                return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Role '{pattern}'"}
-
-        # --- DATA EXTRACTION & SCORING (ONE PASS, HEAVY MODEL) ---
+    def extract_metadata(self, description, title, company):
         prompt_extract = f"""
         Role: Precise Data Extraction Engine.
         Task: Analyze the job description and extract technical metadata.
         
         SOURCE TEXT:
-        Title: {job['title']}
-        Company: {job['company']}
-        Description: {job['description'][:3000]}
+        Title: {title}
+        Company: {company}
+        Description: {description[:3000]}
         
         RULES:
         1. EXTRACT ONLY what is explicitly stated in the text.
@@ -126,22 +106,6 @@ class Brain:
         - hardware_physical_tools: list[str] (Hardware/Machinery)
         - yoe_actual: int (Minimum years required)
         - red_flags: list[str] (Toxic traits, unpaid, etc.)
-
-        Output JSON Example:
-        {{
-            "score": 7,
-            "reason": "Mid-level backend software engineer working on cloud infrastructure.",
-            "salary_base_min": 100000,
-            "salary_base_max": 150000,
-            "work_mode": "Hybrid",
-            "travel_pct_max": 10,
-            "clearance_required": "None",
-            "itar_ear_restricted": false,
-            "tech_stack_core":["Python", "AWS", "Docker"],
-            "hardware_physical_tools":[],
-            "yoe_actual": 5,
-            "red_flags":[]
-        }}
         """
         
         with self.lock:
@@ -156,6 +120,26 @@ class Brain:
                     "reason": f"Extraction Fault: {repr(e)}"
                 }
 
+    def evaluate(self, job):
+        location = job.get('location', '')
+        if location:
+            mem_instance = self.MemoryClass()
+            distance = mem_instance.get_or_fetch_distance(location)
+            if distance is not None and distance != -1.0 and distance > MAX_COMMUTE_MILES:
+                return {"score": 0, "reason": f"Geofence Reject: {distance} miles away."}
+
+        title_lower = str(job.get('title', '')).lower()
+        company_lower = str(job.get('company', '')).lower()
+        
+        for pattern in COMPANY_BLACKLIST:
+            if re.search(pattern, company_lower):
+                return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Company '{pattern}'"}
+        for pattern in TITLE_BLACKLIST:
+            if re.search(pattern, title_lower):
+                return {"score": 0, "reason": f"Heuristic Reject: Blacklisted Role '{pattern}'"}
+
+        return self.extract_metadata(job['description'], job['title'], job['company'])
+
     def build_jit_resume(self, job):
         master = self._load_master_data()
         if not master:
@@ -166,16 +150,50 @@ class Brain:
         company = str(job.get('company', ''))
         
         bullet_catalog = {}
-        prompt_bullets = f"Job Title: {job_title}\nCompany: {company}\nDescription:\n{job_desc}\n\nTask: Select the top 15 to 20 relevant bullet IDs. INCLUE adjacent technical context (e.g. if software role, include hardware/robotics context to show systems depth). We want a dense, 2-page resume.\n\nCandidate Bullets:\n"
+        
+        # --- 1. BUILD UNIFIED CATALOG (Experience + Projects) ---
+        prompt_bullets = f"""
+        Job Title: {job_title}
+        Company: {company}
+        Description:
+        {job_desc}
+        
+        TASK: Select the absolute best bullet IDs to build a STRICT 1-PAGE 'Staff-Level Hybrid Portfolio' resume.
+        
+        CRITICAL EXECUTION STEPS & GUARDRAILS:
+        1. DOMAIN CLASSIFICATION: Identify the target environment. Is it Cloud/SaaS? Silicon/Hardware? Physical Robotics? Edge Compute? Multi-Agent AI?
+        2. PERFECT PAGE YIELD: You MUST select EXACTLY 7-9 bullets from 'Experience' and EXACTLY 3-5 bullets from 'Projects'. Do not exceed this limit.
+        3. PROJECT DIVERSITY: Your Project bullets MUST span at least 2 distinct projects that directly answer the JD's requirements.
+        
+        CANDIDATE ASSETS:
+        """
         
         fallback_ids =[]
-        for exp in master.get('experience', []):
+        
+        # Ingest Experience
+        prompt_bullets += "\n--- EXPERIENCE ---\n"
+        for exp in master.get('experience',[]):
             for i, b in enumerate(exp.get('standardized_bullets',[])):
                 bullet_catalog[b['id']] = b['text']
-                prompt_bullets += f"- {b['id']}: {b['text']}\n"
-                if i < 6: fallback_ids.append(b['id'])
-                
-        prompt_bullets += "\nOutput EXACTLY this JSON format and nothing else: {\"selected_ids\":[\"exp_ez_1\", \"exp_stealth_2\"]}"
+                prompt_bullets += f"- {b['id']} ({exp['company']}): {b['text']}\n"
+                if i < 3: fallback_ids.append(b['id']) # Fallback to core job history
+
+        # Ingest Projects
+        prompt_bullets += "\n--- PROJECTS ---\n"
+        for proj in master.get('projects',[]):
+            for i, b in enumerate(proj.get('standardized_bullets',[])):
+                bullet_catalog[b['id']] = b['text']
+                prompt_bullets += f"- {b['id']} (Project: {proj['name']}): {b['text']}\n"
+                if i == 0 and len(fallback_ids) < 16:
+                    fallback_ids.append(b['id'])
+
+        prompt_bullets += """
+        Output EXACTLY this JSON format (Do NOT output anything else): 
+        {
+            "strategy_rationale": "Briefly explain which projects and experiences you are prioritizing based on the JD.",
+            "selected_ids":["exp_ez_1", "proj_lpe_2"]
+        }
+        """
         
         approved_ids =[]
         with self.lock:
@@ -186,37 +204,44 @@ class Brain:
                     data = json.loads(raw_content)
                     if "selected_ids" in data:
                         approved_ids = data["selected_ids"]
+                        print(f"[BRAIN] Strategy Rationale: {data.get('strategy_rationale', 'None')}")
                     else:
-                        approved_ids =[k for k, v in data.items() if v is True]
+                        approved_ids =[k for k, v in data.items() if isinstance(v, bool) and v is True]
                 except json.JSONDecodeError:
                     print(f"[BRAIN] JSON parse failed, deploying Regex Extraction...")
-                    approved_ids = list(set(re.findall(r'exp_[a-zA-Z0-9]+_\d+', raw_content)))
+                    approved_ids = list(set(re.findall(r'(?:exp|proj)_[a-zA-Z0-9]+_\d+', raw_content)))
             except Exception as e:
                 print(f"[BRAIN] Bullet Extractor API Failed: {e}")
                 
         valid_approved_ids = [i for i in approved_ids if i in bullet_catalog]
         
-        guaranteed_ids = []
+        # --- 2. ANTI-GAP GUARANTEE (Jobs Only) ---
+        guaranteed_ids =[]
         for exp in master.get('experience',[]):
             job_bullet_ids = [b['id'] for b in exp.get('standardized_bullets',[])]
             kept_count = sum(1 for j_id in job_bullet_ids if j_id in valid_approved_ids)
-            if kept_count < 2:
-                needed = 2 - kept_count
+            
+            if kept_count < 1:
+                needed = 1 - kept_count
                 missing_ids =[j_id for j_id in job_bullet_ids if j_id not in valid_approved_ids]
                 guaranteed_ids.extend(missing_ids[:needed])
                 
         if guaranteed_ids:
-            print(f"[BRAIN] Anti-Truncation Triggered: Forcing {len(guaranteed_ids)} missing bullets into {company}...")
             valid_approved_ids.extend(guaranteed_ids)
         
-        if len(valid_approved_ids) < 10:
-            print("[BRAIN] LLM too strict, injecting fallback density...")
-            valid_approved_ids = list(set(valid_approved_ids + fallback_ids))
+        # Dialed back up to 13 to hit the Goldilocks zone for 1-page aesthetics
+        if len(valid_approved_ids) < 13:
+            for fid in fallback_ids:
+                if fid not in valid_approved_ids:
+                    valid_approved_ids.append(fid)
+                if len(valid_approved_ids) >= 13:
+                    break
 
-        actual_experience_text = "\n".join([f"- {bullet_catalog[i]}" for i in valid_approved_ids[:8]])
+        # --- 3. SUMMARY GENERATION ---
+        actual_experience_text = "\n".join([f"- {bullet_catalog[i]}" for i in valid_approved_ids if i in bullet_catalog][:12])
         
         prompt_strategy = f"""
-        Role: Ruthless, Strictly Factual Technical Resume Writer.
+        Role: Staff-Level Systems Architect & Ruthless Technical Resume Writer.
         Target Job: {job_title} at {company}
         Job Description Context: {job_desc[:800]}
 
@@ -225,16 +250,17 @@ class Brain:
 
         TASK: Construct the Strategic Header and Narrative.
         
-        1. **target_title**: A specific, professional title adapted for this role (e.g. "Senior Robotics Engineer" or "AI Infrastructure Lead").
-        2. **core_competency**: A 3-5 word technical subtitle anchoring the candidate's value (e.g. "Real-Time Perception & Edge AI" or "Deterministic Systems & LLM Ops").
-        3. **summary**: A punchy, 3-4 sentence professional summary.
+        1. **target_title**: A specific, professional title adapted for this role.
+        2. **core_competency**: A 3-5 word technical subtitle anchoring value.
+        3. **summary**: A 2-sentence, high-impact technical thesis statement.
 
-        ABSOLUTE ZERO-HALLUCINATION RULES FOR SUMMARY:
-        - ZERO DOMAIN INFERENCE: You are FORBIDDEN from claiming the candidate has experience in {company}'s specific domain.
-        - DO NOT SHAPE-SHIFT: Do not state the candidate is an "Expert in [Target Job Title]" if they have never held that title.
-        - FACT-BASED ALIGNMENT: State ONLY the hardware, software, and systems the candidate has factually built.
-        - NARRATIVE PROSE: Write in flowing, professional resume prose using implied first-person.
-        - ANTI-PATTERNS: Do NOT use "Seasoned", "Passionate", "Results-oriented", "I am a...", or generic fluff.
+        ABSOLUTE ZERO-HALLUCINATION & TONE RULES:
+        - PERSONA ALIGNMENT: Analyze the JD's vibe. Is it highly collaborative R&D? Strict compliance? Dev tools? Mold the candidate's summary to position them as the exact persona required to solve their specific challenges.
+        - SYNTHESIS, NOT REPETITION: Do NOT just copy phrases. Synthesize the background into a high-level thesis.
+        - STRICT LENGTH: Maximum of 2 sentences.
+        - ZERO DOMAIN INFERENCE: You are FORBIDDEN from claiming experience in {company}'s specific domain.
+        - NO TIMELINES: Do not calculate "years of experience".
+        - BANNED WORDS: Never use "passionate", "innovative", "proven track record", "results-driven", "dynamic", "experienced", or "skilled".
 
         Output ONLY valid JSON: {{ "target_title": "...", "core_competency": "...", "summary": "..." }}
         """
@@ -242,7 +268,7 @@ class Brain:
         strategy = {
             "target_title": job_title,
             "core_competency": "Systems Engineering & AI Infrastructure",
-            "summary": "Dedicated Systems Engineer with a proven track record bridging software architecture, AI integration, and robust hardware automation."
+            "summary": "Architects high-throughput, deterministic AI systems with a focus on real-time regulatory compliance and edge AI integration. Designs and deploys robust, versioned data pipelines ensuring integrity and auditability across legal and technical domains."
         }
         
         with self.lock:
@@ -254,7 +280,7 @@ class Brain:
             except Exception as e:
                 print(f"[BRAIN] Strategy Synthesis Failed: {e}")
 
-        print(f"[BRAIN] Tailoring Core Skills for {company}...")
+        # --- 4. SKILL PRUNING ---
         prompt_skills = f"""
         Role: Strict Technical Recruiter.
         Job Title: {job_title}
@@ -268,7 +294,7 @@ class Brain:
         CRITICAL RULES:
         1. RUTHLESS PRUNING: Drop completely irrelevant skills.
         2. NO HALLUCINATION: DO NOT invent new skills. Only use the exact strings present in the Master JSON.
-        3. MAXIMUM 15 SKILLS: Keep the list punchy, dense, and hyper-targeted.
+        3. MAXIMUM 12 SKILLS TOTAL: Keep the list punchy.
         
         Output ONLY valid JSON matching the original category structure.
         """
@@ -287,36 +313,119 @@ class Brain:
 
         clean_company = re.sub(r'[^a-zA-Z0-9]', '', company)
         clean_title = re.sub(r'[^a-zA-Z0-9]', '', job_title)
-        
         filename = f"{clean_company}_{clean_title}_Lucas_Mougeot"
+
+        # --- 5. HEAVY KEYWORD EXTRACTION (CHAIN OF THOUGHT INTERSECTION) ---
+        candidate_text_blob = strategy.get('summary', '') + "\n"
+        candidate_text_blob += actual_experience_text + "\n"
+        for proj in master.get('projects',[]):
+            for b in proj.get('standardized_bullets',[]):
+                if b['id'] in valid_approved_ids:
+                    candidate_text_blob += b['text'] + "\n"
+        for cat, items in dynamic_skills.items():
+            if isinstance(items, list):
+                candidate_text_blob += ", ".join(items) + "\n"
+
+        prompt_highlights = f"""
+        Role: Expert Technical Recruiter
+        Target Job: {job_title} at {company}
+        Job Description: {job_desc[:1200]}
         
+        Candidate's Drafted Resume Text:
+        {candidate_text_blob}
+        
+        TASK: Identify 6-8 technical "must-have" keywords from the Job Description that ALSO appear in the Candidate's Resume Text.
+        
+        CRITICAL RULE: You MUST output a mapping to prove the intersection. The 'candidate_match' string must be EXACTLY how it is spelled in the Candidate's Drafted Resume Text.
+        Do not extract generic words like "development" or "software". Focus on hard skills, tools, and architecture (e.g., Python, Docker, LangGraph, C++, PyTorch, Multi-agent).
+        
+        Output EXACTLY this JSON format:
+        {{
+            "keyword_mapping":[
+                {{"jd_term": "multi-agent architectures", "candidate_match": "multi-agent systems"}},
+                {{"jd_term": "Docker/Kubernetes", "candidate_match": "Docker"}},
+                {{"jd_term": "knowledge graph", "candidate_match": "knowledge graphs"}}
+            ]
+        }}
+        """
+        
+        highlights =[]
+        try:
+            h_res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt_highlights}], format='json')
+            h_data = json.loads(h_res['message']['content'])
+            if "keyword_mapping" in h_data:
+                highlights =[item.get("candidate_match") for item in h_data["keyword_mapping"] if "candidate_match" in item]
+            else:
+                highlights = h_data if isinstance(h_data, list) else []
+            print(f"[BRAIN] Extracted Intersecting JD Keywords for Bolding: {highlights}")
+        except Exception as e:
+            print(f"[BRAIN] Keyword extraction failed: {e}")
+
+        def bold_highlights(text, terms):
+            if not terms: return text
+            
+            terms = sorted([t for t in terms if isinstance(t, str) and len(t) >= 2], key=len, reverse=True)
+            
+            for term in terms:
+                if len(term) <= 3 and term.lower() not in["c", "c++", "ai", "ml", "qa", "ui", "ux", "cv", "go", "aws", "gcp", "api", "rag", "llm"]: 
+                    continue 
+                
+                term_lower = term.lower()
+                if not term[-1].isalpha() or len(term) <= 3:
+                    regex_core = re.escape(term)
+                elif term_lower.endswith('s') and not term_lower.endswith('ss'):
+                    regex_core = re.escape(term[:-1]) + r's?'
+                else:
+                    regex_core = re.escape(term) + r's?'
+
+                pattern = re.compile(rf'(?<![a-zA-Z0-9_\*]){regex_core}(?![a-zA-Z0-9_\*])', re.IGNORECASE)
+                text = pattern.sub(lambda m: f"**{m.group(0)}**", text)
+            
+            text = re.sub(r'\*{3,}', '**', text)
+            return text
+
+        # --- 6. MARKDOWN ASSEMBLY ---
+        highlighted_summary = bold_highlights(strategy['summary'], highlights)
+
         md_content = f"""---
 target_title: "{strategy['target_title']}"
 core_competency: "{strategy['core_competency']}"
 ---
 
 ## Professional Summary
-{strategy['summary']}
+{highlighted_summary}
 
 ## Relevant Experience
 """
         
+        # Experience Loop
         experiences = master.get('experience',[])
-        try:
-            experiences.sort(key=lambda x: 0 if "Founding Systems Engineer" in x.get('title', '') else 1)
-        except Exception:
-            pass 
-
         for exp in experiences:
-            role_bullets = [b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
-            role_bullets = role_bullets[:12] 
-            
+            role_bullets =[b for b in exp.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
             if role_bullets:
-                md_content += f"### {exp['title']} at {exp['company']} ({exp.get('dates', '')})\n"
+                md_content += f"### {exp['title']} at {exp['company']} ({exp.get('dates', '')})\n\n"
                 for b in role_bullets:
-                    md_content += f"- {b['text']}\n"
+                    highlighted_bullet = bold_highlights(b['text'], highlights)
+                    md_content += f"- {highlighted_bullet}\n"
                 md_content += "\n"
         
+        # Project Loop
+        project_section = ""
+        projects = master.get('projects',[])
+        for proj in projects:
+            selected_proj_bullets =[b for b in proj.get('standardized_bullets', []) if b['id'] in valid_approved_ids]
+            if selected_proj_bullets:
+                project_section += f"### {proj['name']}\n\n"
+                if 'context' in proj:
+                    project_section += f"*{proj['context']}*\n\n"
+                for b in selected_proj_bullets:
+                    highlighted_proj_bullet = bold_highlights(b['text'], highlights)
+                    project_section += f"- {highlighted_proj_bullet}\n"
+                project_section += "\n"
+        
+        if project_section:
+            md_content += "## Selected Engineering Architectures\n\n" + project_section
+
         CATEGORY_LABELS = {
             "programming_languages": "Programming Languages",
             "ai_and_machine_learning": "AI and Machine Learning",
@@ -328,15 +437,16 @@ core_competency: "{strategy['core_competency']}"
             "engineering_methodologies": "Engineering Methodologies"
         }
 
-        md_content += "## Core Skills\n"
+        md_content += "## Core Skills\n\n"
         for category, items in dynamic_skills.items():
             if items and isinstance(items, list): 
                 display_label = CATEGORY_LABELS.get(category, category.replace('_', ' ').title())
-                md_content += f"- **{display_label}:** {', '.join(items)}\n"
+                bolded_items =[bold_highlights(item, highlights) for item in items]
+                md_content += f"- **{display_label}:** {', '.join(bolded_items)}\n"
             
-        md_content += "\n## Education\n"
-        for ed in master.get('education', []):
-            md_content += f"- **{ed['degree']}** | {ed['institution']} \n  *{ed['details']}*\n"
+        md_content += "\n## Education\n\n"
+        for ed in master.get('education',[]):
+            md_content += f"- **{ed['degree']}** | {ed['institution']}<br>*{ed['details']}*\n"
             
         filepath = os.path.join(MD_FOLDER, f"{filename}.md")
         try:
@@ -357,19 +467,18 @@ core_competency: "{strategy['core_competency']}"
         
         Approved Master List: {sample_universe}
         
-        Output JSON: {{"terms": ["term1", "term2"]}}
+        Output JSON: {{"terms":["term1", "term2"]}}
         """
         with self.lock:
             try:
                 res = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
-                terms = json.loads(res['message']['content']).get('terms', [])
+                terms = json.loads(res['message']['content']).get('terms',[])
                 valid_terms =[t for t in terms if t in INITIAL_SEARCH_TERMS]
                 return valid_terms if valid_terms else random.sample(INITIAL_SEARCH_TERMS, 2)
             except: 
                 return[]
 
     def generate_outreach(self, job):
-        print(f"[BRAIN] Generating tailored outreach DM for {job.get('company')}...")
         company = str(job.get('company', 'your company'))
         title = str(job.get('title', 'the open role'))
         tech = "systems engineering"
@@ -381,19 +490,20 @@ core_competency: "{strategy['core_competency']}"
             pass
         
         prompt = f"""
-        Role: Expert Technical Copywriter.
-        Task: Write a concise LinkedIn connection message (Under 250 characters MAXIMUM).
+        Role: Professional Engineer doing direct outreach to a Technical Recruiter / Talent Acquisition.
+        Task: Write a concise, natural LinkedIn connection message (Under 250 characters MAXIMUM).
         
         Target Company: {company}
         Target Role: {title}
-        Key Technologies: {tech}
-        Candidate: Lucas, a Systems Engineer building production-grade AI decision platforms.
+        Key Technologies Required: {tech}
+        Candidate Profile: Systems Engineer. Built production multi-agent LLM orchestrators (LangGraph), temporal PostgreSQL Knowledge Graphs, and deterministic AST-parsing pipelines.
         
         RULES:
-        1. STRICT LENGTH: MUST be under 250 characters total. Do not exceed this.
-        2. NO HALLUCINATION. Do not invent facts or pretend you've used tools you haven't.
-        3. FORMAT: Start exactly with "Hi [Name],\n\n" and end exactly with "\n\nBest,\nLucas".
-        4. TONE: Direct, professional, engineer-to-engineer. No fluff. Get straight to the point about your background alignment.
+        1. PHYSICAL LIMIT: MUST be under 250 characters total.
+        2. FORMAT: Start exactly with "Hi [Name],\n\n" and end exactly with "\n\nI'd love to connect and discuss this role!\n\nBest,\nLucas".
+        3. THE RECRUITER PIVOT: The recipient is in Talent Acquisition, NOT a Staff Engineer. Do NOT use overly dense jargon like "temporal PostgreSQL" or "AST parsing". Instead, translate your Candidate Profile into accessible, high-level alignment matching the Target Role (e.g., "deploying LLM applications", "building AI infrastructure", or "developing ML pipelines").
+        4. THE NARRATIVE: "I just applied for[Role]. With my background in[Accessible High-Level Skill], I believe I'd be a strong fit for the team."
+        5. TONE: Warm, natural, confident, and recruiter-friendly.
         
         Output valid JSON only: {{ "message": "..." }}
         """
@@ -401,7 +511,6 @@ core_competency: "{strategy['core_competency']}"
             try:
                 res = ollama.chat(model=HEAVY_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
                 data = json.loads(res['message']['content'])
-                return data.get('message', "Hi [Name],\n\nI recently applied for your open role and believe my systems engineering background strongly aligns with your team's needs.\n\nBest,\nLucas")
+                return data.get('message', "Hi[Name],\n\nI recently applied for your open role and believe my systems engineering background strongly aligns with your team's needs.\n\nBest,\nLucas")
             except Exception as e:
-                print(f"[BRAIN] Outreach Generation Failed: {e}")
                 return "Hi [Name],\n\nI recently applied for your open role and believe my systems engineering background strongly aligns with your team's needs.\n\nBest,\nLucas"
