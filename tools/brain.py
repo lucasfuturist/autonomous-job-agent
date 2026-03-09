@@ -94,7 +94,7 @@ class Brain:
         3. If a field is missing, return null (for ints) or[] (for lists).
         
         SCHEMA:
-        - score: int (Rate technical relevance to Python/C++/AI/Robotics from 0 to 10. 0=Retail/Medical, 5=Generic IT/Software, 10=AI/Robotics)
+        - score: int (Rate technical relevance to Materials Science, R&D, and Hardware from 0 to 10. 0=Retail/Pure IT, 5=Generic Engineering, 10=Materials Characterization/R&D/Computational Materials)
         - reason: "str" (One sentence objective summary of the role)
         - salary_base_min: int or null
         - salary_base_max: int or null

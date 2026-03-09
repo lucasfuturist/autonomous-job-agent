@@ -306,6 +306,8 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"status": "ok", "time": time.time()})
             elif self.path.startswith('/api/jobs'): 
                 self._handle_get_jobs()
+            elif self.path.startswith('/api/companies'): 
+                self._send_json(mem.get_companies())
             elif self.path.startswith('/api/stats'): 
                 self._handle_get_stats()
             elif self.path.startswith('/api/rules'): 
@@ -322,6 +324,15 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_get_recruiters()
             elif self.path.startswith('/api/network'):
                 self._send_json(mem.get_all_contacts())
+            elif self.path == '/api/company/rename':
+                data = json.loads(post_data)
+                old_name = data.get('old_name')
+                new_name = data.get('new_name')
+                if old_name and new_name:
+                    mem.update_company_name(old_name, new_name)
+                    self._send_json({"success": True})
+                else:
+                    self.send_error(400, "Missing old_name or new_name")
             elif self.path == '/api/intel/rationale':
                 data = json.loads(post_data)
                 mem.update_resume_rationale(data.get('id'), data.get('rationale'))
@@ -441,6 +452,25 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                 mem.set_agent_state(data.get('active', False))
                 self._send_json({"success": True})
 
+            elif self.path == '/api/delete_job':
+                data = json.loads(post_data)
+                job_id = data.get('id')
+                if job_id:
+                    mem.delete_job(job_id)
+                    self._send_json({"success": True})
+                else:
+                    self.send_error(400, "Missing id")
+
+            elif self.path == '/api/score/override':
+                data = json.loads(post_data)
+                job_id = data.get('job_id')
+                new_score = data.get('score')
+                if job_id and new_score is not None:
+                    mem.update_manual_score(job_id, int(new_score))
+                    self._send_json({"success": True})
+                else:
+                    self.send_error(400, "Missing job_id or score")
+
             elif self.path == '/api/update_status':
                 data = json.loads(post_data)
                 mem.update_status(data.get('id'), data.get('status'))
@@ -526,6 +556,15 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                             filename, _ = brain.build_jit_resume(target_job)
                             clean_name = os.path.basename(filename)
                             if not clean_name.endswith('.md'): clean_name += '.md'
+                            
+                            # --- NEW: SAVE FILENAME TO DB SO IT STICKS ---
+                            conn = mem._get_conn()
+                            conn.execute("UPDATE jobs SET selected_resume = ? WHERE id = ?", (clean_name, job_id))
+                            conn.commit()
+                            conn.close()
+                            mem.export_dashboard()
+                            # ---------------------------------------------
+                            
                             filepath = os.path.join(MD_FOLDER, clean_name)
                             if os.path.exists(filepath):
                                 with open(filepath, 'r', encoding='utf-8') as f:
@@ -540,7 +579,7 @@ class CRMHandler(http.server.SimpleHTTPRequestHandler):
                         self.send_error(404, "Job not found")
                 else:
                     self.send_error(400, "Missing job_id")
-            
+                    
             elif self.path == '/api/intel/update':
                 data = json.loads(post_data)
                 job_id = data.get('id')

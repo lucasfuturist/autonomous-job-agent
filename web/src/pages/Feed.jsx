@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star, FileText, Terminal, Ghost } from 'lucide-react';
+import { Target, Search, Wifi, MapPin, ShieldAlert, RefreshCw, Star, FileText, Terminal, Ghost, XCircle } from 'lucide-react';
 import JobCard from '../components/JobCard';
 import JobModal from '../components/JobModal';
 
@@ -19,13 +19,17 @@ export default function Feed() {
   const [command, setCommand] = useState("");
   const [commandLoading, setCommandLoading] = useState(false);
 
-  // Filters
+  // Filters & Toggles
   const [search, setSearch] = useState("");
   const [minScore, setMinScore] = useState(parseFloat(localStorage.getItem('cns_score') || 5));
   const [remoteOnly, setRemoteOnly] = useState(localStorage.getItem('cns_remote') === 'true');
   const [stateFilter, setStateFilter] = useState(localStorage.getItem('cns_state') || 'ALL');
   const [resumeFilter, setResumeFilter] = useState(localStorage.getItem('cns_resume') || 'ALL');
   const [starsOnly, setStarsOnly] = useState(false);
+  
+  // New Rejected View State
+  const [viewRejected, setViewRejected] = useState(false);
+  const viewRejectedRef = useRef(false);
 
   const lastJobsRaw = useRef("");
   const lastStatusRaw = useRef("");
@@ -36,15 +40,25 @@ export default function Feed() {
   useEffect(() => { localStorage.setItem('cns_state', stateFilter) }, [stateFilter]);
   useEffect(() => { localStorage.setItem('cns_resume', resumeFilter) }, [resumeFilter]);
 
-  useEffect(() => { setDisplayLimit(100); }, [search, minScore, remoteOnly, stateFilter, resumeFilter, starsOnly]);
+  useEffect(() => { setDisplayLimit(100); }, [search, minScore, remoteOnly, stateFilter, resumeFilter, starsOnly, viewRejected]);
 
   useEffect(() => {
       isTriaging.current = !!selectedJob;
   }, [selectedJob]);
 
+  // Intercept the toggle to force an immediate data refresh
+  useEffect(() => {
+      viewRejectedRef.current = viewRejected;
+      lastJobsRaw.current = ""; 
+      setIsInitialLoad(true);
+      fetchData();
+  }, [viewRejected]);
+
   const fetchData = async () => {
     try {
-      const [jobsRes, statusRes] = await Promise.all([fetch('/api/jobs'), fetch('/data/status.json')]);
+      // Dynamically switch endpoints based on the toggle state
+      const endpoint = viewRejectedRef.current ? '/api/jobs?status=REJECTED' : '/api/jobs';
+      const [jobsRes, statusRes] = await Promise.all([fetch(endpoint), fetch('/data/status.json')]);
       
       if (jobsRes.ok) {
         const text = await jobsRes.text();
@@ -87,6 +101,13 @@ export default function Feed() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus })
     });
+    
+    // Auto-remove the job from the current view if its status no longer matches
+    if (viewRejectedRef.current && newStatus !== 'REJECTED') {
+        setJobs(prev => prev.filter(j => j.id !== id));
+    } else if (!viewRejectedRef.current && newStatus === 'REJECTED') {
+        setJobs(prev => prev.filter(j => j.id !== id));
+    }
   };
 
   const handleToggleStar = async (id, starred) => {
@@ -146,8 +167,19 @@ export default function Feed() {
   }, [jobs]);
 
   const filteredJobs = jobs.filter(j => {
-    if (j.status !== 'TARGET') return false; 
-    if (starsOnly) { if (!j.starred) return false; } else { if (parseFloat(j.score) < minScore) return false; }
+    if (viewRejected) {
+        if (j.status !== 'REJECTED') return false;
+    } else {
+        if (j.status !== 'TARGET') return false; 
+    }
+    
+    if (starsOnly) { 
+        if (!j.starred) return false; 
+    } else if (!viewRejected) { 
+        // Ignore the score filter if we are looking at the rejected pile
+        if (parseFloat(j.score) < minScore) return false; 
+    }
+    
     if (remoteOnly) { if (!((j.location+j.title).toLowerCase().includes('remote'))) return false; }
     
     if (stateFilter !== 'ALL') {
@@ -275,8 +307,8 @@ export default function Feed() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Target size={16} color="#666" />
-          <input type="range" min="1" max="10" step="0.5" value={minScore} onChange={(e) => setMinScore(parseFloat(e.target.value))} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
-          <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{minScore}</span>
+          <input type="range" min="1" max="10" step="0.5" value={minScore} onChange={(e) => setMinScore(parseFloat(e.target.value))} disabled={viewRejected} style={{ accentColor: 'var(--accent)', cursor: viewRejected ? 'not-allowed' : 'pointer', opacity: viewRejected ? 0.3 : 1 }} />
+          <span style={{ color: viewRejected ? '#666' : 'var(--accent)', fontWeight: 'bold' }}>{minScore}</span>
         </div>
 
         {/* Toggles */}
@@ -288,6 +320,11 @@ export default function Feed() {
           <Star size={14} fill={starsOnly ? "gold" : "none"} /> STARRED
         </button>
         
+        {/* NEW REJECTED TOGGLE */}
+        <button onClick={() => setViewRejected(!viewRejected)} style={{ background: viewRejected ? 'rgba(255, 0, 85, 0.1)' : '#000', border: `1px solid ${viewRejected ? 'var(--danger)' : '#444'}`, color: viewRejected ? 'var(--danger)' : '#666', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', borderRadius: '3px', transition: 'all 0.2s' }}>
+          <XCircle size={14} /> REJECTED
+        </button>
+
         {/* Telemetry */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderLeft: '1px solid #333', paddingLeft: '15px' }}>
            <div style={{ fontSize: '12px', color: '#666' }}>
@@ -306,8 +343,8 @@ export default function Feed() {
         ) : filteredJobs.length === 0 ? (
             <div style={{ gridColumn: '1 / -1' }} className="empty-state">
                 <Ghost size={48} opacity={0.2} color="#fff" />
-                <div style={{ fontSize: '16px', color: '#888' }}>NO TARGETS FOUND</div>
-                <div style={{ fontSize: '12px', color: '#555' }}>Adjust radar parameters or deploy a new scout command.</div>
+                <div style={{ fontSize: '16px', color: '#888' }}>{viewRejected ? "NO REJECTED TARGETS FOUND" : "NO TARGETS FOUND"}</div>
+                <div style={{ fontSize: '12px', color: '#555' }}>{viewRejected ? "The reject pile is currently empty." : "Adjust radar parameters or deploy a new scout command."}</div>
             </div>
         ) : (
             visibleJobs.map((job, idx) => (
@@ -327,7 +364,7 @@ export default function Feed() {
                 onMouseOver={(e) => e.target.style.background = 'rgba(0, 255, 157, 0.1)'}
                 onMouseOut={(e) => e.target.style.background = '#111'}
             >
-                LOAD MORE TARGETS ({filteredJobs.length - displayLimit} REMAINING)
+                LOAD MORE {viewRejected ? "REJECTED JOBS" : "TARGETS"} ({filteredJobs.length - displayLimit} REMAINING)
             </button>
         </div>
       )}

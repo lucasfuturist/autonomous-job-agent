@@ -79,7 +79,7 @@ const JobCard = ({ job, onUpdateStatus, onToggleStar, onClick, compact = false }
   if (job.status === 'APPLIED') { borderStyle = '3px solid var(--applied)'; }
   else if (job.status === 'INTERVIEW') { borderStyle = '3px solid var(--interview)'; bgStyle = '#050a10'; }
   else if (job.status === 'OFFER') { borderStyle = '3px solid #fff'; }
-  else if (job.status === 'REJECTED') { borderStyle = '3px solid var(--danger)'; bgStyle = '#1a0505'; }
+  else if (job.status === 'REJECTED') { borderStyle = '3px solid #333'; bgStyle = '#0a0a0a'; }
 
   const isStarred = job.starred === 1 || job.starred === true;
 

@@ -7,6 +7,8 @@ import math
 import time
 import urllib.parse
 import urllib.request
+import shutil       # <-- ADD THIS
+import glob         # <-- ADD THIS
 from config import DB_FILE, JSON_FEED, MISSIONS_FEED, STATUS_FEED, MIN_SCORE
 from datetime import datetime
 
@@ -16,6 +18,7 @@ class Memory:
         self.purge_flag_file = "data/signal_purge.flag"
         self.activity_file = "data/system_activity.json"
         self._init_db()
+        self.backup_database()
 
     def _get_conn(self):
         return sqlite3.connect(DB_FILE, check_same_thread=False, timeout=30.0)
@@ -74,6 +77,28 @@ class Memory:
         conn.commit()
         conn.close()
 
+    def backup_database(self):
+        """Creates a single rolling backup of the database, updated at most every 5 minutes."""
+        backup_dir = "data/backups"
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
+            
+        if os.path.exists(DB_FILE):
+            backup_path = os.path.join(backup_dir, "targets_backup.db")
+            
+            # Check if the backup already exists and is less than 5 minutes (300s) old
+            if os.path.exists(backup_path):
+                file_age = time.time() - os.path.getmtime(backup_path)
+                if file_age < 300:
+                    return # Skip backup, it hasn't been 5 minutes yet
+            
+            try:
+                # Copy the database, overwriting the single backup file
+                shutil.copy2(DB_FILE, backup_path)
+                print(f"[MEMORY] 💾 Rolling database backup updated.")
+            except Exception as e:
+                pass
+    
     # --- AGENT STATE & ACTIVITY ---
     def get_agent_state(self):
         state_file = "data/agent_state.json"
@@ -203,6 +228,28 @@ class Memory:
                 return None
         return None
 
+    def get_companies(self):
+        """Aggregates active jobs by company to prevent ATS spamming."""
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        
+        # We only want to look at active pipeline jobs, ignoring REJECTED
+        query = """
+            SELECT 
+                company, 
+                COUNT(*) as total_jobs,
+                SUM(CASE WHEN status = 'TARGET' THEN 1 ELSE 0 END) as target_jobs,
+                SUM(CASE WHEN status = 'APPLIED' THEN 1 ELSE 0 END) as applied_jobs,
+                MAX(score) as max_score
+            FROM jobs
+            WHERE status != 'REJECTED'
+            GROUP BY company
+            ORDER BY target_jobs DESC, max_score DESC, total_jobs DESC
+        """
+        rows = conn.execute(query).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
     def get_global_stats(self):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
@@ -237,6 +284,16 @@ class Memory:
         conn.close()
         return res is not None
 
+    def delete_job(self, job_id):
+        """Permanently deletes a dead job from the database."""
+        conn = self._get_conn()
+        try:
+            conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        self.export_dashboard()
+
     def save_job(self, job):
         if self.job_exists(job['url'], job['company'], job['title']): return False
         
@@ -252,6 +309,16 @@ class Memory:
         except: return False
         finally: conn.close()
         
+    def update_company_name(self, old_name, new_name):
+        """Bulk updates a company name across all associated jobs."""
+        conn = self._get_conn()
+        try:
+            conn.execute("UPDATE jobs SET company = ? WHERE company = ?", (new_name, old_name))
+            conn.commit()
+        finally:
+            conn.close()
+        self.export_dashboard()
+
     def update_job_description(self, job_id, description):
         conn = self._get_conn()
         conn.execute("UPDATE jobs SET description = ? WHERE id = ?", (description, job_id))
@@ -263,6 +330,16 @@ class Memory:
         conn.execute("UPDATE jobs SET resume_rationale = ? WHERE id = ?", (rationale, job_id))
         conn.commit()
         conn.close()
+        self.export_dashboard()
+
+    def update_manual_score(self, job_id, new_score):
+        """Hollywood Demo Mode: Force override a job's score."""
+        conn = self._get_conn()
+        try:
+            conn.execute("UPDATE jobs SET score = ? WHERE id = ?", (new_score, job_id))
+            conn.commit()
+        finally:
+            conn.close()
         self.export_dashboard()
 
     def update_job(self, url, score, reason, resume, analysis_data=None):

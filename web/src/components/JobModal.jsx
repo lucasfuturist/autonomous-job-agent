@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus, Users, ScanSearch, CheckCircle2, Mail, Plus, Copy, Zap, Eye, PenLine } from 'lucide-react';
+import { ExternalLink, Check, X, Mic, ArrowRight, RotateCcw, Star, Calendar, MapPin, FileText, BrainCircuit, User, Link, FileDown, ChevronLeft, ChevronRight, Navigation, FileCheck, Edit, Save, XCircle, RefreshCw, AlertTriangle, Cpu, PenTool, DollarSign, Lock, FilePlus, Users, ScanSearch, CheckCircle2, Mail, Plus, Copy, Zap, Eye, PenLine, ClipboardList, Tags, Trash2 } from 'lucide-react';
 
 export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, onNext, onPrev }) {
   const [localJob, setLocalJob] = useState(job);
@@ -24,7 +24,20 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [descEditContent, setDescEditContent] = useState("");
   
-  // RECRUITER STATE - Updated to match CRM Schema
+  const [isEditingScore, setIsEditingScore] = useState(false);
+  const [tempScore, setTempScore] = useState("");
+  
+  // WORKDAY VIEWS
+  const [isWorkdayView, setIsWorkdayView] = useState(false);
+  const [copiedItemId, setCopiedItemId] = useState(null);
+  const [copiedFields, setCopiedFields] = useState({}); // Tracks permanently copied items
+  
+  // SKILLS FAST-COPY VIEWS
+  const [isSkillsView, setIsSkillsView] = useState(false);
+  const [skillsInput, setSkillsInput] = useState("");
+  const [copiedSkills, setCopiedSkills] = useState(new Set());
+
+  // RECRUITER STATE
   const [recruiters, setRecruiters] = useState([]);
   const [newContact, setNewContact] = useState({ 
       name: '', title: '', url: '', email: '', phone: '', message_sent: '', history: '', contact_dates: [], replied: false 
@@ -41,9 +54,21 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
   // MAPPING RATIONALE STATE
   const [mappingRationale, setMappingRationale] = useState("");
 
-  // Sync prop job to local state
+  // Sync prop job to local state & reset ephemeral UI states
   useEffect(() => {
     setLocalJob(job);
+    
+    // Wipe all temporary copy/paste states clean for the next job
+    setSkillsInput("");
+    setCopiedSkills(new Set());
+    setCopiedItemId(null);
+    setCopiedFields({});
+    
+    // Reset back to default views
+    setIsWorkdayView(false);
+    setIsSkillsView(false);
+    setIsEditingDesc(false);
+    setIsEditingResume(false);
   }, [job]);
 
   const isStarred = localJob?.starred === 1 || localJob?.starred === true;
@@ -72,12 +97,30 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
   // --- ACTION HANDLERS ---
   const handleTriageAction = React.useCallback((status) => {
-      if (onNext) onNext(); else onClose(); 
+      setLocalJob(prev => ({ ...prev, status })); // Optimistic UI snap
       if (localJob?.id) onUpdateStatus(localJob.id, status);        
-  },[localJob?.id, onNext, onClose, onUpdateStatus]);
+      // Removed the auto-advance: if (onNext) onNext(); else onClose();
+  },[localJob?.id, onUpdateStatus]);
 
   const handleCorrection = (status) => {
+      setLocalJob(prev => ({ ...prev, status })); // Optimistic UI snap
       if (localJob?.id) onUpdateStatus(localJob.id, status);
+  };
+
+  const handleDeleteJob = async () => {
+      if (!confirm("Permanently delete this job? This cannot be undone.")) return;
+      try {
+          await fetch('/api/delete_job', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: localJob.id })
+          });
+          // Update UI instantly by tricking the local state into filtering it out
+          onUpdateStatus(localJob.id, 'DELETED');
+          if (onNext) onNext(); else onClose();
+      } catch (e) {
+          console.error("Failed to delete job:", e);
+      }
   };
 
   // --- KEYBOARD SHORTCUTS ---
@@ -93,14 +136,14 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       if (key === 'arrowleft' && onPrev) onPrev();
       
       if (key === 'x' && localJob.status === 'TARGET') handleTriageAction('REJECTED');
-      if (key === 'a' && localJob.status === 'TARGET') handleTriageAction('APPLIED');
+      // ALLOW 'A' KEY ON BOTH TARGET AND REJECTED JOBS
+      if (key === 'a' && (localJob.status === 'TARGET' || localJob.status === 'REJECTED')) handleTriageAction('APPLIED');
       if (key === 's') onToggleStar(localJob.id, !isStarred);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   },[localJob, onClose, onNext, onPrev, onToggleStar, isStarred, handleTriageAction]);
-
-  // --- 1. RESUME EFFECT (Separated to prevent re-fetching on recruiter updates) ---
+  // --- 1. RESUME EFFECT ---
   useEffect(() => {
     if (!localJob) return;
 
@@ -117,11 +160,10 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     setIsEditingDesc(false);
   }, [localJob?.id, localJob?.selected_resume, hasResume]);
 
-  // --- 2. INTEL & RECRUITERS EFFECT (Syncs on polling update) ---
+  // --- 2. INTEL & RECRUITERS EFFECT ---
   useEffect(() => {
     if (!localJob) return;
     
-    // Sync local state with DB
     setOutreachMsg(localJob?.outreach_message || "");
     setMappingRationale(localJob?.resume_rationale || ""); 
     
@@ -198,7 +240,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
 
   const handleRebuildResume = async () => {
     if (rebuilding) return;
-    if (!confirm("Fully rebuild this resume? This will overwrite manual edits.")) return;
+    if (hasResume && !confirm("Fully rebuild this resume? This will overwrite manual edits.")) return;
     setRebuilding(true);
     try {
         const res = await fetch('/api/regenerate_resume', {
@@ -208,6 +250,8 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         if (res.ok) {
             const data = await res.json();
             setResumeContent(data.content);
+            // Optmistic update so the UI knows it has a resume now
+            setLocalJob(prev => ({...prev, selected_resume: data.filename}));
         }
     } catch (e) { console.error(e); } finally { setRebuilding(false); }
   };
@@ -259,6 +303,28 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       }
   };
 
+  // Add this right below handleSaveRationale
+  const handleScoreOverride = async () => {
+      const newScore = parseInt(tempScore, 10);
+      if (isNaN(newScore)) {
+          setIsEditingScore(false);
+          return;
+      }
+      try {
+          await fetch('/api/score/override', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ job_id: localJob.id, score: newScore })
+          });
+          // Update UI instantly
+          setLocalJob(prev => ({ ...prev, score: newScore }));
+          setIsEditingScore(false);
+      } catch (e) {
+          console.error("Failed to override score:", e);
+          setIsEditingScore(false);
+      }
+  };
+
   const handleRecruiterRecon = (e) => {
     if (e) e.stopPropagation();
     const query = `site:linkedin.com/in "${localJob.company}" talent OR recruiter OR hiring`;
@@ -266,7 +332,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     window.open(url, '_blank');
   };
 
-  // --- FIXED DUPLICATE GUARD ADD RECRUITER ---
   const handleAddRecruiter = async () => {
       const url = newContact.url?.trim() || "";
       const email = newContact.email?.trim() || "";
@@ -283,7 +348,6 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
           contacted: true 
       };
       
-      // FRONTEND DUPLICATE CHECK: Prevent optimistic rendering spam
       setRecruiters(prev => {
           const isDup = prev.some(r => (url && r.url === url) || (email && r.email === email));
           if (isDup) return prev;
@@ -314,6 +378,76 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
             body: JSON.stringify({ job_id: localJob.id, url: url, contacted: target.contacted })
         });
     } catch(e) { console.error("Failed to toggle contact status", e); }
+  };
+
+  // --- WORKDAY PARSER LOGIC WITH SUB-FIELD EXTRACTION ---
+  const parseForWorkday = (md) => {
+      if (!md || md === "Loading...") return [];
+      const blocks = [];
+
+      const summaryMatch = md.match(/## Professional Summary\n([\s\S]*?)(?=\n## )/);
+      if (summaryMatch) {
+          blocks.push({
+              fullTitle: "Professional Summary",
+              role: "Professional Summary",
+              content: summaryMatch[1].replace(/\*\*/g, '').replace(/<br\s*\/?>/gi, '\n').trim()
+          });
+      }
+
+      const expMatches = [...md.matchAll(/### (.*?)\n([\s\S]*?)(?=\n### |\n## |$)/g)];
+      expMatches.forEach(match => {
+          let content = match[2].replace(/\*\*/g, '').replace(/<br\s*\/?>/gi, '\n').trim();
+          content = content.split('\n').map(line => {
+              if (line.startsWith('*') && line.endsWith('*')) return line.substring(1, line.length - 1);
+              return line;
+          }).join('\n');
+
+          let rawTitle = match[1].trim();
+          let role = rawTitle;
+          let company = "";
+          let dates = "";
+
+          const dateMatch = rawTitle.match(/(.*?)\s*\(([^)]+)\)$/);
+          if (dateMatch) {
+              rawTitle = dateMatch[1].trim();
+              dates = dateMatch[2].trim();
+              role = rawTitle;
+          }
+
+          const atSplit = rawTitle.split(' at ');
+          if (atSplit.length > 1) {
+              company = atSplit.pop().trim();
+              role = atSplit.join(' at ').trim(); 
+          }
+
+          blocks.push({ 
+              fullTitle: match[1].trim(),
+              role,
+              company,
+              dates, 
+              content: content.trim() 
+          });
+      });
+
+      return blocks;
+  };
+
+  // Checks if a block has had all its relevant (non-date) parts copied
+  const checkBlockCompleted = (block, idx) => {
+      if (block.fullTitle === "Professional Summary") {
+          return !!copiedFields[`${idx}-desc`];
+      }
+      
+      let complete = true;
+      if (block.role && block.fullTitle !== "Professional Summary") {
+          if (!copiedFields[`${idx}-role`]) complete = false;
+      }
+      if (block.company) {
+          if (!copiedFields[`${idx}-comp`]) complete = false;
+      }
+      if (!copiedFields[`${idx}-desc`]) complete = false;
+      
+      return complete;
   };
 
   if (!localJob) return null;
@@ -361,15 +495,12 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
     } catch (e) { console.error("Deploy failed:", e); } finally { setDeploying(false); }
   };
 
-  // --- PRO-GRADE RESIZE LOGIC (REFINED) ---
   const handleDragStart = (splitterIndex) => (mouseDownEvent) => {
     mouseDownEvent.preventDefault();
     const container = containerRef.current;
     if (!container) return;
 
     const bounds = container.getBoundingClientRect();
-    
-    // Anchor current positions
     const startX = mouseDownEvent.clientX;
     const startLeft = leftWidth;
     const startCenter = centerWidth;
@@ -382,34 +513,20 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         const deltaPercent = (deltaX / bounds.width) * 100;
 
         if (splitterIndex === 1) {
-            // TRADE SPACE: PANE 1 <-> PANE 2
             let newLeft = startLeft + deltaPercent;
             let newCenter = startCenter - deltaPercent;
             
-            // Hard limits (2% min width for high-density viewing)
-            if (newLeft < 2) {
-                newLeft = 2;
-                newCenter = startLeft + startCenter - 2;
-            } else if (newCenter < 2) {
-                newCenter = 2;
-                newLeft = startLeft + startCenter - 2;
-            }
+            if (newLeft < 2) { newLeft = 2; newCenter = startLeft + startCenter - 2; } 
+            else if (newCenter < 2) { newCenter = 2; newLeft = startLeft + startCenter - 2; }
 
             setLeftWidth(newLeft);
             setCenterWidth(newCenter);
-            
         } else if (splitterIndex === 2) {
-            // TRADE SPACE: PANE 2 <-> PANE 3
             let newCenter = startCenter + deltaPercent;
             const rightPaneWidth = 100 - startLeft - newCenter;
 
-            // Constrain Pane 2 and Pane 3 (The Resume Pane)
-            if (newCenter < 2) {
-                newCenter = 2;
-            } else if (rightPaneWidth < 2) {
-                // This prevents the Resume pane from getting stuck
-                newCenter = 100 - startLeft - 2;
-            }
+            if (newCenter < 2) newCenter = 2;
+            else if (rightPaneWidth < 2) newCenter = 100 - startLeft - 2;
 
             setCenterWidth(newCenter);
         }
@@ -461,10 +578,11 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
       zIndex: 1000, display: 'flex', flexDirection: 'column', padding: '20px'
     }} onClick={onClose} className="fade-in">
       
+      {/* TOP BAR - Locked */}
       <div style={{ 
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
           marginBottom: '15px', background: '#0a0a0a', padding: '15px', 
-          borderRadius: '8px', border: '1px solid #222' 
+          borderRadius: '8px', border: '1px solid #222', flexShrink: 0
       }} onClick={e => e.stopPropagation()}>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -484,7 +602,25 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: statusColor, marginRight: '10px' }}>{localJob.score}</div>
+            {isEditingScore ? (
+                <input 
+                    type="number" 
+                    value={tempScore} 
+                    onChange={(e) => setTempScore(e.target.value)}
+                    onBlur={handleScoreOverride}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleScoreOverride(); if (e.key === 'Escape') setIsEditingScore(false); }}
+                    autoFocus
+                    style={{ width: '45px', background: '#000', color: statusColor, border: `1px solid ${statusColor}`, borderRadius: '4px', fontSize: '20px', fontWeight: 'bold', textAlign: 'center', marginRight: '10px', outline: 'none' }}
+                />
+            ) : (
+                <div 
+                    onDoubleClick={() => { setTempScore(localJob.score); setIsEditingScore(true); }} 
+                    title="Double-click to manually override score"
+                    style={{ fontSize: '24px', fontWeight: 'bold', color: statusColor, marginRight: '10px', cursor: 'crosshair' }}
+                >
+                    {localJob.score}
+                </div>
+            )}
             
             <button onClick={() => onToggleStar(localJob.id, !isStarred)} style={{ background: 'transparent', border: '1px solid #333', padding: '8px', cursor: 'pointer', color: isStarred ? 'gold' : '#666', borderRadius: '4px', transition: 'color 0.2s' }} title="Star (S)">
                 <Star size={18} fill={isStarred ? "gold" : "none"} />
@@ -500,17 +636,22 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 </button>
             </div>
 
+            <button onClick={handleDeleteJob} style={{ background: 'rgba(255, 0, 85, 0.1)', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '8px', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px', transition: 'all 0.2s', display: 'flex', alignItems: 'center' }} title="Permanently Delete Job">
+                <Trash2 size={18} />
+            </button>
+
             <button onClick={onClose} style={{ background: '#222', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px', transition: 'background 0.2s' }} title="Close (ESC)">
                 ESC
             </button>
           </div>
       </div>
 
-      <div ref={containerRef} style={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div ref={containerRef} style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         
         {/* PANE 1: TARGET */}
-        <div style={{ width: `calc(${leftWidth}% - 4px)`, flex: 'none', background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ width: `calc(${leftWidth}% - 4px)`, height: '100%', flex: 'none', background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header Locked */}
+            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={14} /> TARGET INTEL (DESCRIPTION)</div>
                 {!isEditingDesc ? (
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -531,7 +672,8 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 )}
             </div>
             
-            <div style={{ flexGrow: 1, overflowY: 'auto', position: 'relative' }}>
+            {/* Scrollable Content */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative' }}>
                 {isEditingDesc ? (
                      <textarea 
                         value={descEditContent} 
@@ -554,12 +696,14 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         <div style={splitterStyle} onMouseDown={handleDragStart(1)} onMouseOver={(e) => e.target.style.background = '#333'} onMouseOut={(e) => e.target.style.background = 'transparent'} />
 
         {/* PANE 2: STRATEGY */}
-        <div style={{ width: `calc(${centerWidth}% - 8px)`, flex: 'none', background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ width: `calc(${centerWidth}% - 8px)`, height: '100%', flex: 'none', background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header Locked */}
+            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                 <BrainCircuit size={14} /> TACTICAL ANALYSIS
             </div>
             
-            <div style={{ padding: '20px', overflowY: 'auto', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Scrollable Content */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                      <div style={{ background: '#111', border: '1px solid #222', padding: '10px', borderRadius: '4px' }}>
                          <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px', display:'flex', alignItems:'center', gap:'4px' }}><DollarSign size={10} /> COMP RANGE</div>
@@ -682,7 +826,7 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                     {formatResume(reasonText)}
                 </div>
 
-                {/* --- NEW MAPPING RATIONALE BLOCK --- */}
+                {/* --- MAPPING RATIONALE BLOCK --- */}
                 <div style={{ borderTop: '1px solid #222', paddingTop: '10px', marginTop: '10px' }}>
                     <div style={{ fontSize: '10px', color: '#888', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <FileCheck size={12} /> JD-TO-RESUME MAPPING (PROOF OF AUDIT)
@@ -691,9 +835,9 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                         value={mappingRationale}
                         onChange={(e) => {
                             setMappingRationale(e.target.value);
-                            localJob.resume_rationale = e.target.value; // Optimistic update
+                            localJob.resume_rationale = e.target.value; 
                         }}
-                        onBlur={handleSaveRationale} // Auto-saves when you click away
+                        onBlur={handleSaveRationale} 
                         placeholder="Paste your Gemini 'Proof of Audit' mapping here for interview prep..."
                         style={{ 
                             width: '100%', minHeight: '120px', background: '#050505', color: '#ccc', 
@@ -703,21 +847,17 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                         }}
                     />
                 </div>
-                {/* ----------------------------------- */}
-
-                <div style={{ marginTop: 'auto', background: '#050505', border: '1px solid #333', borderRadius: '4px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '10px', background: '#111' }}>
-                        <button onClick={handleDeploy} disabled={deploying || !hasResume || isEditingResume} style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || !hasResume || isEditingResume) ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.3s', opacity: (!hasResume || isEditingResume) ? 0.5 : 1 }}>
-                            {deploying ? "CONVERTING PDF..." : deployed ? "DEPLOYMENT SUCCESSFUL" : "DEPLOY PDF"}
-                            {deploying && <RefreshCw size={14} className="live-dot" style={{marginRight: 0}} />}
-                            {!deploying && !deployed && <FileDown size={14} />}
-                            {deployed && <FileCheck size={14} />}
-                        </button>
-                    </div>
-                </div>
             </div>
             
-            <div style={{ padding: '15px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Footer Locked */}
+            <div style={{ padding: '15px', borderTop: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '10px', flexShrink: 0, background: '#0a0a0a' }}>
+                <button onClick={handleDeploy} disabled={deploying || !hasResume || isEditingResume} style={{ width: '100%', background: deployed ? 'var(--accent)' : '#222', color: deployed ? '#000' : 'var(--accent)', border: `1px solid ${deployed ? 'var(--accent)' : '#444'}`, padding: '10px', borderRadius: '4px', cursor: (deploying || !hasResume || isEditingResume) ? 'not-allowed' : 'pointer', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.3s', opacity: (!hasResume || isEditingResume) ? 0.5 : 1 }}>
+                    {deploying ? "CONVERTING PDF..." : deployed ? "DEPLOYMENT SUCCESSFUL" : "DEPLOY PDF"}
+                    {deploying && <RefreshCw size={14} className="live-dot" style={{marginRight: 0}} />}
+                    {!deploying && !deployed && <FileDown size={14} />}
+                    {deployed && <FileCheck size={14} />}
+                </button>
+
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <a href={localJob.url} target="_blank" rel="noreferrer" style={{ flexGrow: 1, textDecoration: 'none', textAlign: 'center', color: '#fff', border: '1px solid #444', padding: '8px', borderRadius: '4px', fontSize: '12px', background: '#111', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'background 0.2s' }}>
                         OPEN ORIGINAL SOURCE <ExternalLink size={14} />
@@ -745,10 +885,22 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                         <button onClick={() => handleTriageAction('OFFER')} style={{ background: '#fff', border: 'none', color: '#000', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>MARK OFFER</button>
                     </div>
                 )}
+                {localJob.status === 'OFFER' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginTop: '5px' }}>
+                        <button onClick={() => handleCorrection('INTERVIEW')} style={{ background: '#000', border: '1px solid #444', color: '#888', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                            UNDO (TO INTERVIEW)
+                        </button>
+                    </div>
+                )}
                 {localJob.status === 'REJECTED' && (
-                    <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '5px', transition: 'opacity 0.2s' }}>
-                        RESTORE TO TARGET <RotateCcw size={14} />
-                    </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '5px' }}>
+                        <button onClick={() => handleCorrection('TARGET')} style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                            RESTORE TO TARGET <RotateCcw size={14} />
+                        </button>
+                        <button onClick={() => handleTriageAction('APPLIED')} style={{ background: 'var(--applied)', border: 'none', color: '#fff', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                            MARK APPLIED (A) <Check size={14} />
+                        </button>
+                    </div>
                 )}
             </div>
         </div>
@@ -756,19 +908,42 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
         <div style={splitterStyle} onMouseDown={handleDragStart(2)} onMouseOver={(e) => e.target.style.background = '#333'} onMouseOut={(e) => e.target.style.background = 'transparent'} />
 
         {/* PANE 3: ASSET */}
-        <div style={{ flexGrow: 1, flex: 'none', width: `${100 - leftWidth - centerWidth}%`, background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ width: `${100 - leftWidth - centerWidth}%`, height: '100%', flex: 'none', background: '#0a0a0a', border: '1px solid #222', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header Locked */}
+            <div style={{ padding: '10px 15px', borderBottom: '1px solid #222', background: '#111', fontWeight: 'bold', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexShrink: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <User size={14} /> ACTIVE ASSET ({localJob.selected_resume || "None"})
                 </div>
+                
+                {/* HEAD CONTROLS */}
                 {!isEditingResume ? (
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={handleCopyResume} disabled={!hasResume || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: resumeCopied ? 'var(--accent)' : '#aaa', cursor: (!hasResume || resumeContent === "Loading...") ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Copy Resume Content">
+                        {/* SKILLS COPY MODE TOGGLE */}
+                        <button 
+                            onClick={() => { setIsSkillsView(!isSkillsView); setIsWorkdayView(false); setIsEditingResume(false); }} 
+                            disabled={!hasResume || resumeContent === "Loading..."} 
+                            style={{ background: isSkillsView ? 'var(--accent)' : 'transparent', border: 'none', color: isSkillsView ? '#000' : '#aaa', cursor: (!hasResume || resumeContent === "Loading...") ? 'not-allowed' : 'pointer', padding: '4px', borderRadius: '3px', transition: 'all 0.2s' }} 
+                            title={isSkillsView ? "Exit Skills Mode" : "Enter Skills Copy Mode"}
+                        >
+                            <Tags size={16} />
+                        </button>
+                        
+                        {/* WORKDAY COPY MODE TOGGLE */}
+                        <button 
+                            onClick={() => { setIsWorkdayView(!isWorkdayView); setIsSkillsView(false); setIsEditingResume(false); }} 
+                            disabled={!hasResume || resumeContent === "Loading..."} 
+                            style={{ background: isWorkdayView ? 'var(--accent)' : 'transparent', border: 'none', color: isWorkdayView ? '#000' : '#aaa', cursor: (!hasResume || resumeContent === "Loading...") ? 'not-allowed' : 'pointer', padding: '4px', borderRadius: '3px', transition: 'all 0.2s' }} 
+                            title={isWorkdayView ? "Exit Workday Mode" : "Enter Workday Copy Mode"}
+                        >
+                            <ClipboardList size={16} />
+                        </button>
+                        <div style={{ width: '1px', background: '#333', margin: '0 4px' }}></div>
+                        <button onClick={handleCopyResume} disabled={!hasResume || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: resumeCopied ? 'var(--accent)' : '#aaa', cursor: (!hasResume || resumeContent === "Loading...") ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Copy Raw Resume Markdown">
                             {resumeCopied ? <Check size={16} /> : <Copy size={16} />}
                         </button>
                         <button onClick={handleRebuildResume} disabled={!hasResume || rebuilding || isEditingResume} style={{ background: 'transparent', border: 'none', color: rebuilding ? 'var(--accent)' : '#aaa', cursor: (!hasResume || rebuilding) ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Full Asset Rebuild (Regenerate from Source)"><Zap size={16} className={rebuilding ? "live-dot" : ""} /></button>
                         <button onClick={handleRegenerateSummary} disabled={!hasResume || regenerating || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: regenerating ? 'var(--accent)' : '#aaa', cursor: (!hasResume || regenerating || resumeContent === "Loading...") ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Regenerate Summary Only"><RefreshCw size={16} className={regenerating ? "live-dot" : ""} /></button>
-                        <button onClick={() => { setResumeEditContent(resumeContent); setIsEditingResume(true); }} disabled={!hasResume || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: resumeContent === "Loading..." ? '#444' : '#aaa', cursor: resumeContent === "Loading..." ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Edit Resume"><Edit size={16} /></button>
+                        <button onClick={() => { setIsWorkdayView(false); setIsSkillsView(false); setResumeEditContent(resumeContent); setIsEditingResume(true); }} disabled={!hasResume || resumeContent === "Loading..."} style={{ background: 'transparent', border: 'none', color: resumeContent === "Loading..." ? '#444' : '#aaa', cursor: resumeContent === "Loading..." ? 'not-allowed' : 'pointer', padding: '4px', transition: 'color 0.2s' }} title="Edit Resume"><Edit size={16} /></button>
                     </div>
                 ) : (
                     <div style={{ display: 'flex', gap: '10px' }}>
@@ -778,20 +953,185 @@ export default function JobModal({ job, onClose, onUpdateStatus, onToggleStar, o
                 )}
             </div>
             
-            <div style={{ flexGrow: 1, overflow: 'hidden', position: 'relative' }}>
+            {/* Scrollable Content */}
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
                 {isEditingResume ? (
                     <textarea 
                         value={resumeEditContent} 
                         onChange={(e) => setResumeEditContent(e.target.value)}
                         style={{ width: '100%', height: '100%', background: '#050505', color: '#ddd', border: 'none', padding: '20px', fontFamily: 'monospace', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box' }} 
                     />
+                ) : isSkillsView ? (
+                    // --- SKILLS FAST-COPY VIEW ---
+                    <div style={{ height: '100%', overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#050505' }} className="fade-in">
+                        <div style={{ fontSize: '12px', color: 'var(--accent)', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+                            <Tags size={14} /> SKILLS FAST-COPY MODE
+                        </div>
+                        
+                        <textarea
+                            value={skillsInput}
+                            onChange={(e) => setSkillsInput(e.target.value)}
+                            placeholder="Paste your \n separated skills list from Gemini here..."
+                            style={{ width: '100%', minHeight: '100px', background: '#111', color: '#ccc', border: '1px solid #333', padding: '10px', fontFamily: 'monospace', fontSize: '11px', resize: 'vertical', outline: 'none', borderRadius: '4px' }}
+                        />
+                        
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                            {skillsInput.split('\n').map(s => s.trim()).filter(s => s.length > 0).map((skill, idx) => {
+                                const isCopied = copiedSkills.has(skill);
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(skill);
+                                            setCopiedSkills(prev => new Set(prev).add(skill));
+                                        }}
+                                        style={{
+                                            background: isCopied ? 'var(--accent)' : '#222',
+                                            color: isCopied ? '#000' : '#ccc',
+                                            border: `1px solid ${isCopied ? 'var(--accent)' : '#444'}`,
+                                            padding: '6px 12px',
+                                            borderRadius: '15px',
+                                            fontSize: '11px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            transition: 'all 0.2s',
+                                            opacity: isCopied ? 0.7 : 1
+                                        }}
+                                    >
+                                        {isCopied && <Check size={12} />}
+                                        {skill}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : isWorkdayView ? (
+                    // --- WORKDAY FAST-COPY VIEW ---
+                    <div style={{ height: '100%', overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#050505' }} className="fade-in">
+                        <div style={{ fontSize: '12px', color: 'var(--accent)', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+                            <ClipboardList size={14} /> WORKDAY FAST-COPY MODE
+                        </div>
+                        {parseForWorkday(resumeContent).map((block, idx) => {
+                            const checkBlockCompleted = (b, index) => {
+                                if (b.fullTitle === "Professional Summary") return !!copiedFields[`${index}-desc`];
+                                let complete = true;
+                                if (b.role && b.fullTitle !== "Professional Summary" && !copiedFields[`${index}-role`]) complete = false;
+                                if (b.company && !copiedFields[`${index}-comp`]) complete = false;
+                                if (!copiedFields[`${index}-desc`]) complete = false;
+                                return complete;
+                            };
+                            
+                            const isCompleted = checkBlockCompleted(block, idx);
+
+                            return (
+                                <div key={idx} style={{ 
+                                    background: isCompleted ? 'rgba(0, 255, 157, 0.05)' : '#111', 
+                                    border: `1px solid ${isCompleted ? 'rgba(0, 255, 157, 0.4)' : '#333'}`, 
+                                    borderRadius: '4px', overflow: 'hidden', transition: 'all 0.3s ease' 
+                                }}>
+                                    <div style={{ 
+                                        padding: '10px 15px', 
+                                        background: isCompleted ? 'rgba(0, 255, 157, 0.1)' : '#1a1a1a', 
+                                        borderBottom: `1px solid ${isCompleted ? 'rgba(0, 255, 157, 0.2)' : '#333'}`, 
+                                        display: 'flex', flexDirection: 'column', gap: '8px', transition: 'all 0.3s ease' 
+                                    }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 'bold', color: isCompleted ? 'var(--accent)' : '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            {isCompleted && <CheckCircle2 size={14} />}
+                                            {block.fullTitle}
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                            {block.role && block.fullTitle !== "Professional Summary" && (
+                                                <button 
+                                                    onClick={() => { 
+                                                        navigator.clipboard.writeText(block.role); 
+                                                        setCopiedItemId(`${idx}-role`); 
+                                                        setCopiedFields(prev => ({...prev, [`${idx}-role`]: true}));
+                                                        setTimeout(() => setCopiedItemId(null), 2000); 
+                                                    }}
+                                                    style={{ 
+                                                        background: copiedItemId === `${idx}-role` ? 'var(--accent)' : (copiedFields[`${idx}-role`] ? 'rgba(0,255,157,0.1)' : '#222'), 
+                                                        color: copiedItemId === `${idx}-role` ? '#000' : (copiedFields[`${idx}-role`] ? 'var(--accent)' : '#aaa'), 
+                                                        border: `1px solid ${copiedItemId === `${idx}-role` || copiedFields[`${idx}-role`] ? 'var(--accent)' : '#444'}`, 
+                                                        padding: '4px 10px', borderRadius: '3px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' 
+                                                    }}
+                                                >
+                                                    {copiedItemId === `${idx}-role` || copiedFields[`${idx}-role`] ? <Check size={10} /> : <Copy size={10} />} TITLE
+                                                </button>
+                                            )}
+                                            {block.company && (
+                                                <button 
+                                                    onClick={() => { 
+                                                        navigator.clipboard.writeText(block.company); 
+                                                        setCopiedItemId(`${idx}-comp`); 
+                                                        setCopiedFields(prev => ({...prev, [`${idx}-comp`]: true}));
+                                                        setTimeout(() => setCopiedItemId(null), 2000); 
+                                                    }}
+                                                    style={{ 
+                                                        background: copiedItemId === `${idx}-comp` ? 'var(--accent)' : (copiedFields[`${idx}-comp`] ? 'rgba(0,255,157,0.1)' : '#222'), 
+                                                        color: copiedItemId === `${idx}-comp` ? '#000' : (copiedFields[`${idx}-comp`] ? 'var(--accent)' : '#aaa'), 
+                                                        border: `1px solid ${copiedItemId === `${idx}-comp` || copiedFields[`${idx}-comp`] ? 'var(--accent)' : '#444'}`, 
+                                                        padding: '4px 10px', borderRadius: '3px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' 
+                                                    }}
+                                                >
+                                                    {copiedItemId === `${idx}-comp` || copiedFields[`${idx}-comp`] ? <Check size={10} /> : <Copy size={10} />} COMPANY
+                                                </button>
+                                            )}
+                                            {block.dates && (
+                                                <button 
+                                                    onClick={() => { 
+                                                        navigator.clipboard.writeText(block.dates); 
+                                                        setCopiedItemId(`${idx}-date`); 
+                                                        // Note: Dates do not set copiedFields per user request
+                                                        setTimeout(() => setCopiedItemId(null), 2000); 
+                                                    }}
+                                                    style={{ 
+                                                        background: copiedItemId === `${idx}-date` ? 'var(--accent)' : '#222', 
+                                                        color: copiedItemId === `${idx}-date` ? '#000' : '#aaa', 
+                                                        border: `1px solid ${copiedItemId === `${idx}-date` ? 'var(--accent)' : '#444'}`, 
+                                                        padding: '4px 10px', borderRadius: '3px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' 
+                                                    }}
+                                                >
+                                                    {copiedItemId === `${idx}-date` ? <Check size={10} /> : <Copy size={10} />} DATES
+                                                </button>
+                                            )}
+                                            
+                                            <button 
+                                                onClick={() => { 
+                                                    navigator.clipboard.writeText(block.content); 
+                                                    setCopiedItemId(`${idx}-desc`); 
+                                                    setCopiedFields(prev => ({...prev, [`${idx}-desc`]: true}));
+                                                    setTimeout(() => setCopiedItemId(null), 2000); 
+                                                }}
+                                                style={{ 
+                                                    marginLeft: 'auto', 
+                                                    background: copiedItemId === `${idx}-desc` ? 'var(--accent)' : (copiedFields[`${idx}-desc`] ? 'rgba(0,255,157,0.1)' : '#222'), 
+                                                    color: copiedItemId === `${idx}-desc` ? '#000' : (copiedFields[`${idx}-desc`] ? 'var(--accent)' : 'var(--accent)'), 
+                                                    border: `1px solid ${copiedItemId === `${idx}-desc` || copiedFields[`${idx}-desc`] ? 'var(--accent)' : '#444'}`, 
+                                                    padding: '4px 10px', borderRadius: '3px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' 
+                                                }}
+                                            >
+                                                {copiedItemId === `${idx}-desc` || copiedFields[`${idx}-desc`] ? <Check size={10} /> : <Copy size={10} />} COPY DESC
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style={{ padding: '15px', fontSize: '11px', color: '#ccc', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.5' }}>
+                                        {block.content}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 ) : (
+                    // --- STANDARD MARKDOWN PREVIEW ---
                     <div style={{ height: '100%', overflowY: 'auto', color: '#888', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', boxSizing: 'border-box' }}>
                         {!hasResume ? (
                              <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '15px' }} className="fade-in">
                                  <FilePlus size={32} color="#333" />
                                  <div style={{ fontSize: '12px', color: '#666' }}>NO RESUME GENERATED</div>
-                                 <button onClick={handleRegenerateSummary} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }} onMouseOver={e => e.target.style.borderColor = 'var(--accent)'} onMouseOut={e => e.target.style.borderColor = '#444'}><BrainCircuit size={14} /> GENERATE ASSET</button>
+                                 <button onClick={handleRebuildResume} style={{ background: '#222', border: '1px solid #444', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }} onMouseOver={e => e.target.style.borderColor = 'var(--accent)'} onMouseOut={e => e.target.style.borderColor = '#444'}><BrainCircuit size={14} /> GENERATE ASSET</button>
                              </div>
                         ) : resumeContent === "Loading..." ? (
                             renderSkeletonResume()

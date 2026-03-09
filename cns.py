@@ -154,19 +154,22 @@ def analyst_loop(worker_id):
         mem.set_system_activity(f"ANALYST-{worker_id}", f"Evaluating {job['company']}")
         
         analysis = brain.evaluate(job)
-        score = int(analysis.get('score', 0))
+        
+        # --- SAFELY HANDLE NULL SCORES ---
+        raw_score = analysis.get('score')
+        score = int(raw_score) if raw_score is not None else 0
+        # ---------------------------------
+        
         reason = analysis.get('reason', 'N/A')
         
         mem.feedback_mission_quality(job.get('search_term'), score)
 
         if score >= MIN_SCORE:
-            print(f"[CNS-{worker_id}] JIT Assembling Resume for {job['company']}...")
-            mem.set_system_activity(f"ANALYST-{worker_id}", f"Writing Asset for {job['company']}")
-            resume, deployment_notes = brain.build_jit_resume(job)
-            if deployment_notes:
-                reason = f"{reason}\n\n### DEPLOYMENT SCRIPT:\n{deployment_notes}"
+            print(f"[CNS-{worker_id}] Target Found: {job['company']} ({score}/10) - Skipping auto-resume to save compute.")
+            mem.set_system_activity(f"ANALYST-{worker_id}", f"Target Found: {job['company']}")
+            resume = "None"
         else:
-            resume = "N/A"
+            resume = "None"
         
         if score >= 8 and job_queue.qsize() < 10:
             new_terms = brain.strategize(job)
